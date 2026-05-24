@@ -10,6 +10,7 @@ Add user guide and readme content to explain project architecture, CLI, visual s
 ## Progress
 - [x] Analyze codebase, specifications (PRD, ARCH), and test configurations (completed)
 - [x] Create visually rich, comprehensive main repository `README.md` (completed)
+- [x] Fix Mermaid syntax error in `README.md` by quoting labels with special characters (completed)
 - [x] Create extensive, user-oriented instruction guide `docs/USER_GUIDE.md` (completed)
 - [x] Synchronize main agent index `agents/DOCUMENTATION_INDEX.md` (completed)
 - [x] Update local working memory & context files (completed)
@@ -21,4 +22,4 @@ None
 None (Direct execution)
 
 ---
-*Last updated: 2026-05-24T12:05:00-04:00*
+*Last updated: 2026-05-24T12:08:00-04:00*

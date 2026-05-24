@@ -118,3 +118,11 @@ make[1]: Leaving directory '/home/drusifer/Projects/nerd-dock'
 ---
 [<small>2026-05-24 12:02:11</small>] [**Oracle**]->[**User**] *handoff*:
  Completed documentation sprint. Added README.md and docs/USER_GUIDE.md, and updated agent documentation index. Handing back to User for verification. @User *verify
+
+---
+[<small>2026-05-24 12:07:12</small>] [**User**]->[**all**] *request*:
+ fix mermaid in README.md
+
+---
+[<small>2026-05-24 12:07:27</small>] [**Oracle**]->[**User**] *handoff*:
+ Fixed Mermaid syntax in README.md by quoting node labels containing special characters. Handing back to User for verification. @User *verify

@@ -43,7 +43,7 @@ graph TD
         A[NerdDockApp]:::main --> B[NerdDockIndicator]:::main
         B -->|Controls Dropdowns| C[GTK Context Menu]:::main
         B -->|Updates Icon & Tooltip| D[Ayatana AppIndicator]:::main
-        B -->|Dispatches Alerts| E[libnotify / Notify]:::main
+        B -->|Dispatches Alerts| E["libnotify / Notify"]:::main
     end
 
     subgraph Controller ["Subprocess Management"]
@@ -55,9 +55,9 @@ graph TD
     end
 
     subgraph OS ["Operating System & Environment"]
-        H[nerd-dictation Subprocess]:::external
-        I[/tmp/nerd-dictation.cookie]:::external
-        J[/proc/PID/status]:::external
+        H["nerd-dictation Subprocess"]:::external
+        I["/tmp/nerd-dictation.cookie"]:::external
+        J["/proc/PID/status"]:::external
     end
 
     %% Interactions
