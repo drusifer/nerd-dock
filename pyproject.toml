@@ -35,6 +35,12 @@ dev = [
 [project.scripts]
 nerd-dock = "nerd_dock.main:main"
 
+[tool.setuptools]
+packages = ["nerd_dock"]
+
+[tool.setuptools.package-data]
+nerd_dock = ["resources/icons/*.svg"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"

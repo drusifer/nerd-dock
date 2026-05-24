@@ -126,3 +126,42 @@ make[1]: Leaving directory '/home/drusifer/Projects/nerd-dock'
 ---
 [<small>2026-05-24 12:07:27</small>] [**Oracle**]->[**User**] *handoff*:
  Fixed Mermaid syntax in README.md by quoting node labels containing special characters. Handing back to User for verification. @User *verify
+
+---
+[<small>2026-05-24 12:08:48</small>] [**User**]->[**all**] *request*:
+ add make for system install
+
+---
+[<small>2026-05-24 12:09:02</small>] [**Oracle**]->[**User**] *handoff*:
+ Added make install-system-deps to Makefile.prj to automate system dependencies. Updated README.md and USER_GUIDE.md to document this. Handing back to User for verification. @User *verify
+
+---
+[<small>2026-05-24 12:10:43</small>] [**User**]->[**all**] *request*:
+ i want a target to install nerd-doc on the current system (pythonic way)
+
+---
+[<small>2026-05-24 12:10:58</small>] [**Oracle**]->[**User**] *handoff*:
+ Added make install to Makefile.prj to support pythonic active-environment package installation. Updated README.md and USER_GUIDE.md to document this. Handing back to User for verification. @User *verify
+
+---
+[<small>2026-05-24 12:15:21</small>] [**make**]->[**all**] *build*:
+ Build FAILED exit=2 | make install | /home/drusifer/Projects/nerd-dock/build/build.out
+make[1]: Leaving directory '/home/drusifer/Projects/nerd-dock'
+Check package spec for errors.
+make[1]: *** [Makefile.prj:28: install] Error 1
+
+---
+[<small>2026-05-24 12:16:19</small>] [**User**]->[**all**] *request*:
+ i will install to system with pipx but you need to fix this first: Multiple top-level packages discovered error.
+
+---
+[<small>2026-05-24 12:17:41</small>] [**Oracle**]->[**User**] *handoff*:
+ Resolved pipx installation issue by explicitly defining packages and package-data in pyproject.toml to avoid flat-layout auto-discovery conflicts with the agents directory. Updated README.md and USER_GUIDE.md. Handing back to User. @User *verify
+
+---
+[<small>2026-05-24 12:22:12</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make install | /home/drusifer/Projects/nerd-dock/build/build.out
+done! ✨ 🌟 ✨
+These apps are now globally available
+- nerd-dock
+make[1]: Leaving directory '/home/drusifer/Projects/nerd-dock'

@@ -12,6 +12,12 @@ Nerd-Dock is built in Python utilizing **GObject Introspection (PyGObject)** to 
 Before setting up python modules, you need to install the GObject wrapper libraries for GTK 3, Ayatana AppIndicator, and the Libnotify desktop notification framework. Run the following command:
 
 ```bash
+# Automatically install all required system packages via apt
+make install-system-deps
+```
+
+Alternatively, you can run the commands manually:
+```bash
 sudo apt-get update
 sudo apt-get install -y \
     python3-gi \
@@ -20,16 +26,34 @@ sudo apt-get install -y \
     gir1.2-notify-0.7
 ```
 
-### Step 2: Set Up Python Virtual Environment
-PyGObject bindings rely on binary C libraries installed on your host OS. To allow Python to access these host libraries while maintaining an isolated dev environment, you **must** initialize the Python virtual environment with the `--system-site-packages` flag.
+### Step 2: Choose Installation Strategy
+
+Depending on your workflow, choose one of the following methods to install the Nerd-Dock package:
+
+#### Strategy A: System-Wide / User Installation via `pipx` (Highly Recommended)
+If you want to install Nerd-Dock cleanly as a system-wide user application using **`pipx`**, you must pass the `--system-site-packages` flag. This allows pipx's isolated virtual environment to link and load your native system Ayatana/GTK library bindings:
+```bash
+# Install using pipx, linking system site packages
+pipx install . --system-site-packages
+```
+
+#### Strategy B: Active Environment Installation (Pythonic)
+If you want to install Nerd-Dock directly into your active python environment (such as a custom pre-activated venv) and automatically register the `nerd-dock` command:
+```bash
+# Install package pythonically to the active environment
+make install
+```
+
+#### Strategy B: Isolated Developer Environment
+PyGObject bindings rely on binary C libraries installed on your host OS. To allow Python to access these host libraries while maintaining an isolated dev environment, you can initialize the Python virtual environment with the `--system-site-packages` flag.
 
 Our standard setup automation handles this completely:
 ```bash
-# Deletes old environments and builds a fresh, correct virtual environment
+# Builds an isolated virtual environment with access to system packages
 make setup
 ```
 
-Under the hood, this target executes:
+Under the hood, `make setup` executes:
 ```bash
 python3 -m venv --system-site-packages venv
 venv/bin/pip install --upgrade pip

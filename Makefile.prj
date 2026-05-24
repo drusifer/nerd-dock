@@ -4,7 +4,7 @@ VENV = venv
 PYTHON = $(VENV)/bin/python3
 PIP = $(VENV)/bin/pip
 
-.PHONY: all setup run test lint format clean help
+.PHONY: all setup run test lint format clean help install-system-deps install
 
 all: help
 
@@ -12,7 +12,20 @@ help: ## Show this help message
 	@echo "Nerd-Dock Development Automation"
 	@echo ""
 	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+install-system-deps: ## Install Ubuntu system packages (requires sudo)
+	@echo "Installing system dependencies via apt..."
+	sudo apt-get update
+	sudo apt-get install -y \
+		python3-gi \
+		gir1.2-gtk-3.0 \
+		gir1.2-ayatanaappindicator3-0.1 \
+		gir1.2-notify-0.7
+
+install: ## Install Nerd-Dock to the active python environment (pythonic way)
+	@echo "Installing Nerd-Dock to the current python environment..."
+	pipx install .  --system-site-packages
 
 setup: ## Create virtualenv and install dependencies
 	@echo "Setting up python virtual environment with system site packages..."

@@ -78,7 +78,12 @@ graph TD
 Nerd-Dock is optimized for **Ubuntu 26.04** (GNOME 50). It relies on native system libraries for GObject Introspection, GTK+ 3.0, Ayatana AppIndicator, and Desktop Notifications:
 
 ```bash
-# Install required system dependencies
+# Automatically install all required system dependencies (requires sudo)
+make install-system-deps
+```
+
+Alternatively, you can install them manually:
+```bash
 sudo apt-get update
 sudo apt-get install -y \
     python3-gi \
@@ -89,8 +94,31 @@ sudo apt-get install -y \
 
 ### 📦 Installation
 
-To preserve system packages and link native system GObject bindings, Nerd-Dock must be installed in a Python virtual environment (`venv`) using the `--system-site-packages` flag.
+There are two ways to set up Nerd-Dock depending on your workflow:
 
+#### Option A: System-Wide / User Installation via `pipx` (Highly Recommended)
+To install Nerd-Dock cleanly as a system-wide user application using **`pipx`**, you must pass the `--system-site-packages` flag to allow the pipx-isolated environment to link and load your native system Ayatana/GTK library bindings:
+```bash
+# Clone the repository
+git clone https://github.com/drusifer/nerd-dock.git
+cd nerd-dock
+
+# Install system dependencies (requires sudo)
+make install-system-deps
+
+# Install using pipx, linking system site packages
+pipx install . --system-site-packages
+```
+
+#### Option B: Active Environment Installation (Pythonic)
+To install Nerd-Dock directly into your active python environment (such as a custom pre-activated venv) and register the `nerd-dock` entrypoint:
+```bash
+# Install to the active environment
+make install
+```
+
+#### Option B: Isolated Developer Environment
+To set up an isolated development environment linked with native GObject wrappers (`--system-site-packages` flag):
 1.  **Clone the Repository:**
     ```bash
     git clone https://github.com/drusifer/nerd-dock.git
@@ -98,7 +126,6 @@ To preserve system packages and link native system GObject bindings, Nerd-Dock m
     ```
 
 2.  **Set Up the Environment:**
-    The project features an automated setup script via the `Makefile` to set up the virtual environment and install all packages in editable mode:
     ```bash
     make setup
     ```
