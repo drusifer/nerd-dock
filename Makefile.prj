@@ -1,0 +1,53 @@
+# Makefile.prj - Project Automation Targets for Nerd-Dock
+
+VENV = venv
+PYTHON = $(VENV)/bin/python3
+PIP = $(VENV)/bin/pip
+
+.PHONY: all setup run test lint format clean help
+
+all: help
+
+help: ## Show this help message
+	@echo "Nerd-Dock Development Automation"
+	@echo ""
+	@echo "Targets:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+
+setup: ## Create virtualenv and install dependencies
+	@echo "Setting up python virtual environment with system site packages..."
+	python3 -m venv --system-site-packages $(VENV)
+	$(PIP) install --upgrade pip
+	$(PIP) install -e .[dev]
+	@echo "Setup complete. Virtual environment ready."
+
+run: ## Run the Nerd-Dock tray application
+	@echo "Starting Nerd-Dock..."
+	PYTHONPATH=. $(PYTHON) nerd_dock/main.py
+
+test: ## Run unit tests with pytest
+	@echo "Running unit tests..."
+	PYTHONPATH=. $(PYTHON) -m pytest tests/ --cov=nerd_dock --cov-report=term-missing
+
+lint: ## Run comprehensive static analysis (ruff, radon, vulture, bandit, pylint)
+	@echo "=== Running Ruff Linter ==="
+	$(PYTHON) -m ruff check nerd_dock tests
+	@echo "=== Running Ruff Formatter (Check) ==="
+	$(PYTHON) -m ruff format --check nerd_dock tests
+	@echo "=== Running Radon (Complexity Gate) ==="
+	$(PYTHON) -m radon cc -s -nb nerd_dock
+	@echo "=== Running Vulture (Dead Code Detection) ==="
+	$(PYTHON) -m vulture nerd_dock
+	@echo "=== Running Bandit (Security Vulnerabilities) ==="
+	$(PYTHON) -m bandit -r nerd_dock
+	@echo "=== Running Pylint (Duplicate Code Check) ==="
+	$(PYTHON) -m pylint --disable=all --enable=duplicate-code nerd_dock
+	@echo "=== Static Analysis Completed Successfully ==="
+
+format: ## Automatically format all code using Ruff
+	$(PYTHON) -m ruff format nerd_dock tests
+	$(PYTHON) -m ruff check --fix nerd_dock tests
+
+clean: ## Clean up build artifacts and caches
+	rm -rf .pytest_cache .coverage htmlcov .ruff_cache build dist *.egg-info
+	find . -type d -name "__pycache__" -exec rm -rf {} +

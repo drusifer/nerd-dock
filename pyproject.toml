@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nerd-dock"
+version = "0.1.0"
+description = "A lightweight system-wide control tray applet for nerd-dictation on GNOME"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Neo", email = "neo@example.com" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: X11 Applications :: GTK",
+]
+dependencies = [
+    "PyGObject>=3.40.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "radon>=6.0.0",
+    "vulture>=2.7",
+    "bandit>=1.7.5",
+    "pylint>=3.0.0",
+]
+
+[project.scripts]
+nerd-dock = "nerd_dock.main:main"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "S", "B", "A", "COM", "C4", "PT", "ARG", "PTH", "RUF"]
+ignore = [
+    "S108",    # Using hardcoded temporary directory (/tmp/nerd-dictation.cookie is designed by nerd-dictation)
+    "S603",    # Subprocess check for untrusted input (we control command lists statically)
+    "PT009",   # Pytest style: assert instead of unittest assertEqual
+    "PT015",   # Pytest style: assert instead of unittest assertTrue/assertFalse
+    "PT027",   # Pytest style: raises instead of unittest assertRaises
+    "COM812",  # Conflict with formatter
+    "PTH",     # Allow standard os.path and open operations instead of forcing pathlib
+    "ARG",     # Allow unused callback arguments (common in GTK event handlers)
+    "E402",    # Allow imports after gi.require_version calls (required for GObject)
+    "N802",    # Allow uppercase function names to mock standard library subprocess.Popen
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
