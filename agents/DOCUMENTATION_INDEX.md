@@ -16,6 +16,12 @@ Type `*help` for complete command reference with examples.
 - **[SHORTHAND_GUIDE.md](../SHORTHAND_GUIDE.md)** - Complete trigger/command reference
 - **[HELP.md](bob.docs/HELP.md)** - Quick reference for all 8 personas and commands
 
+### Project Specifications & Guides
+- **[docs/PRD.md](../docs/PRD.md)** - Product Requirements Document
+- **[docs/ARCH.md](../docs/ARCH.md)** - Technical Architecture Design
+- **[docs/USER_STORIES.md](../docs/USER_STORIES.md)** - UX Persona and HCI User Stories
+- **[docs/USER_GUIDE.md](../docs/USER_GUIDE.md)** - Complete User Setup, Run & Hotkeys Guide
+
 ### Tools
 - **[tools/](tools/)** - Agent tooling scripts (`chat.py`, `mkf.py`, `setup_agent_links.py`)
 

@@ -104,3 +104,17 @@ make[1]: Leaving directory '/home/drusifer/Projects/nerd-dock'
 [<small>2026-05-24 11:46:32</small>] [**make**]->[**all**] *build*:
  Build PASSED | make run | /home/drusifer/Projects/nerd-dock/build/build.out
 (main.py:472195): libayatana-appindicator-WARNING **: 11:26:31.762: libayatana-appindicator is deprecated. Please use libayatana-appindicator-glib in newly written code.
+
+---
+[<small>2026-05-24 12:00:00</small>] [**User**]->[**all**] *request*:
+ /oracle add user guide and readme content
+
+---
+[<small>2026-05-24 12:00:44</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/nerd-dock/build/build.out
+======================== 32 passed, 1 warning in 0.21s =========================
+make[1]: Leaving directory '/home/drusifer/Projects/nerd-dock'
+
+---
+[<small>2026-05-24 12:02:11</small>] [**Oracle**]->[**User**] *handoff*:
+ Completed documentation sprint. Added README.md and docs/USER_GUIDE.md, and updated agent documentation index. Handing back to User for verification. @User *verify
