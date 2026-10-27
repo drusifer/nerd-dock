@@ -2,6 +2,8 @@
 
 import argparse
 import logging
+import os
+import shutil
 import signal
 import sys
 
@@ -38,14 +40,22 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--executable",
         type=str,
-        default="/home/drusifer/.local/bin/nerd-dictation",
-        help="Path to nerd-dictation (default: %(default)s)",
+        default=shutil.which("nerd-dictation")
+        or os.path.expanduser("~/.local/bin/nerd-dictation"),
+        help="Path to nerd-dictation (default: found on PATH, else %(default)s)",
     )
     parser.add_argument(
         "--cookie",
         type=str,
         default="/tmp/nerd-dictation.cookie",  # nosec B108
         help="Path to cookie file (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--input-tool",
+        type=str,
+        default="YDOTOOL",
+        choices=("XDOTOOL", "DOTOOL", "DOTOOLC", "YDOTOOL", "WTYPE", "STDOUT"),
+        help="nerd-dictation --simulate-input-tool (default: %(default)s)",
     )
     parser.add_argument(
         "--poll-interval",
@@ -90,7 +100,9 @@ def main() -> int:
         controller = NerdDockController(
             executable_path=args.executable,
             cookie_path=args.cookie,
+            input_tool=args.input_tool,
         )
+        controller.start_input_daemon()
         monitor = NerdDictationMonitor(
             controller=controller,
             cookie_path=args.cookie,
@@ -101,6 +113,8 @@ def main() -> int:
         from nerd_dock.ui_indicator import NerdDockIndicator
 
         indicator = NerdDockIndicator(controller=controller, monitor=monitor)
+
+        indicator.enable_remote_toggle()
 
         # 3. Start the background process monitor
         monitor.start()

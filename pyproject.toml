@@ -17,9 +17,10 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Environment :: X11 Applications :: GTK",
 ]
-dependencies = [
-    "PyGObject>=3.40.0",
-]
+# PyGObject is intentionally not listed: it is provided by the system package
+# (python3-gobject) via --system-site-packages, and building it from PyPI needs
+# cairo/gobject-introspection/python devel headers.
+dependencies = []
 
 [project.optional-dependencies]
 dev = [

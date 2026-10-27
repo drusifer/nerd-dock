@@ -37,7 +37,7 @@ Cypher *pm plan sprint
 
 **Handoff:**
 ```bash
-make chat MSG="Stories ready for user review. @Smith *user review <sprint>" PERSONA="Cypher" CMD="pm handoff" TO="Smith"
+bobp chat "Stories ready for user review. @Smith *user review <sprint>" --persona Cypher --cmd "pm handoff" --to Smith
 ```
 
 ### Gate 1 — Smith: User Story Review
@@ -50,10 +50,10 @@ Smith *user review <stories>
 
 ```bash
 # Approve → proceed to Morpheus
-make chat MSG="*user approve. Stories approved. @Morpheus *lead arch sprint" PERSONA="Smith" CMD="user approve" TO="Morpheus"
+bobp chat "*user approve. Stories approved. @Morpheus *lead arch sprint" --persona Smith --cmd "user approve" --to Morpheus
 
 # Reject → back to Cypher
-make chat MSG="*user reject REASON: <reason> | FIX: <fix>. @Cypher revise stories." PERSONA="Smith" CMD="user reject" TO="Cypher"
+bobp chat "*user reject REASON: <reason> | FIX: <fix>. @Cypher revise stories." --persona Smith --cmd "user reject" --to Cypher
 ```
 
 ### Step 2 — Morpheus: Architecture
@@ -66,7 +66,7 @@ Morpheus *lead arch sprint
 
 **Handoff:**
 ```bash
-make chat MSG="Architecture complete. @Smith *user feedback <arch summary>" PERSONA="Morpheus" CMD="lead handoff" TO="Smith"
+bobp chat "Architecture complete. @Smith *user feedback <arch summary>" --persona Morpheus --cmd "lead handoff" --to Smith
 ```
 
 ### Gate 2 — Smith: Architecture Review
@@ -78,10 +78,10 @@ Smith *user feedback <arch>
 
 ```bash
 # Approve → proceed to Mouse
-make chat MSG="*user approve. Architecture approved. @Mouse *sm plan sprint" PERSONA="Smith" CMD="user approve" TO="Mouse"
+bobp chat "*user approve. Architecture approved. @Mouse *sm plan sprint" --persona Smith --cmd "user approve" --to Mouse
 
 # Reject → back to Morpheus
-make chat MSG="*user reject REASON: <reason> | FIX: <fix>. @Morpheus revise arch." PERSONA="Smith" CMD="user reject" TO="Morpheus"
+bobp chat "*user reject REASON: <reason> | FIX: <fix>. @Morpheus revise arch." --persona Smith --cmd "user reject" --to Morpheus
 ```
 
 ### Step 3 — Mouse: Phase Breakdown
@@ -94,7 +94,7 @@ Mouse *sm plan sprint
 
 **Handoff:**
 ```bash
-make chat MSG="Sprint planned. Phases ready for review. @Morpheus *lead review sprint plan" PERSONA="Mouse" CMD="sm handoff" TO="Morpheus"
+bobp chat "Sprint planned. Phases ready for review. @Morpheus *lead review sprint plan" --persona Mouse --cmd "sm handoff" --to Morpheus
 ```
 
 ### Step 3a — Morpheus: Sprint Plan Review
@@ -106,7 +106,7 @@ Morpheus *lead review sprint plan
 
 **Handoff (approved):**
 ```bash
-make chat MSG="Sprint plan approved. Phase 1 ready. @Neo *swe impl phase-1" PERSONA="Morpheus" CMD="lead handoff" TO="Neo"
+bobp chat "Sprint plan approved. Phase 1 ready. @Neo *swe impl phase-1" --persona Morpheus --cmd "lead handoff" --to Neo
 ```
 
 ---
@@ -124,7 +124,7 @@ Neo *swe impl <phase N>
 
 **Handoff:**
 ```bash
-make chat MSG="Phase N impl complete. @Trin *qa uat phase-N" PERSONA="Neo" CMD="swe handoff" TO="Trin"
+bobp chat "Phase N impl complete. @Trin *qa uat phase-N" --persona Neo --cmd "swe handoff" --to Trin
 ```
 
 ### Step 5 — Trin: UAT
@@ -136,12 +136,12 @@ Trin *qa uat <phase N>
 
 **Handoff (pass):**
 ```bash
-make chat MSG="UAT phase N passed. @Morpheus *lead review phase-N" PERSONA="Trin" CMD="qa handoff" TO="Morpheus"
+bobp chat "UAT phase N passed. @Morpheus *lead review phase-N" --persona Trin --cmd "qa handoff" --to Morpheus
 ```
 
 **Handoff (fail):**
 ```bash
-make chat MSG="UAT phase N FAILED. @Neo *swe fix <issues>" PERSONA="Trin" CMD="qa reject" TO="Neo"
+bobp chat "UAT phase N FAILED. @Neo *swe fix <issues>" --persona Trin --cmd "qa reject" --to Neo
 ```
 
 ### Step 6 — Morpheus: Code Review
@@ -152,17 +152,17 @@ Morpheus *lead review <phase N>
 
 **Handoff (pass — more phases):**
 ```bash
-make chat MSG="Phase N review passed. @Neo *swe impl phase-N+1" PERSONA="Morpheus" CMD="lead handoff" TO="Neo"
+bobp chat "Phase N review passed. @Neo *swe impl phase-N+1" --persona Morpheus --cmd "lead handoff" --to Neo
 ```
 
 **Handoff (pass — last phase):**
 ```bash
-make chat MSG="All phases reviewed. @Oracle *ora groom" PERSONA="Morpheus" CMD="lead handoff" TO="Oracle"
+bobp chat "All phases reviewed. @Oracle *ora groom" --persona Morpheus --cmd "lead handoff" --to Oracle
 ```
 
 **Handoff (fail):**
 ```bash
-make chat MSG="Phase N review FAILED. Issues: <issues>. @Neo *swe fix <issues>" PERSONA="Morpheus" CMD="lead reject" TO="Neo"
+bobp chat "Phase N review FAILED. Issues: <issues>. @Neo *swe fix <issues>" --persona Morpheus --cmd "lead reject" --to Neo
 ```
 
 **Fix loop rule:** If Neo fails to fix after one retry → Anti-Loop Protocol applies (Oracle consult + user escalation required).
@@ -176,11 +176,16 @@ make chat MSG="Phase N review FAILED. Issues: <issues>. @Neo *swe fix <issues>" 
 Oracle *ora groom
 ```
 - Update docs, record decisions, archive sprint artifacts
-- Ensure CHAT.md is archived if over 50-100 messages
+- Ensure CHAT.md is archived if over 50-100 messages (rolling `*ora archive`)
+- **Sprint-close chat report:** write a short summary of the sprint's CHAT.md conversation, then run
+  `bobp chat-report --moniker <SPRINT_MONIKER> --summary "<summary>"` (`*ora report <SPRINT_MONIKER>`).
+  This archives CHAT.md + CHAT.diagram.md to `agents/chat_archive/CHAT_<SPRINT_MONIKER>.md`/`.diagram.md`
+  and resets CHAT.md for the next sprint — all file I/O is handled by the command; Oracle supplies only
+  the summary text. Run `bobp chat-report --combine` afterward if a consolidated `CHAT_FULL.md` is needed.
 
 **Handoff:**
 ```bash
-make chat MSG="Docs groomed. @Smith *user test <sprint>" PERSONA="Oracle" CMD="ora handoff" TO="Smith"
+bobp chat "Docs groomed. @Smith *user test <sprint>" --persona Oracle --cmd "ora handoff" --to Smith
 ```
 
 ### Step 8 — Smith: End-to-End User Testing
@@ -193,12 +198,12 @@ Smith *user feedback
 
 **Handoff (pass):**
 ```bash
-make chat MSG="User testing passed. @all *sprint retro" PERSONA="Smith" CMD="user approve" TO="all"
+bobp chat "User testing passed. @all *sprint retro" --persona Smith --cmd "user approve" --to all
 ```
 
 **Handoff (bug found):**
 ```bash
-make chat MSG="*user bug CMD: <cmd> | EXPECTED: <x> | ACTUAL: <y> | UX ISSUE: <z>. @Trin triage." PERSONA="Smith" CMD="user bug" TO="Trin"
+bobp chat "*user bug CMD: <cmd> | EXPECTED: <x> | ACTUAL: <y> | UX ISSUE: <z>. @Trin triage." --persona Smith --cmd "user bug" --to Trin
 ```
 → Trin triages → fix loop → re-test before retro
 
@@ -222,7 +227,7 @@ Output feeds Cypher's backlog before launch.
 
 ```bash
 # Each persona posts:
-make chat MSG="<persona> retro: <findings>. Backlog items: <items>" PERSONA="<Name>" CMD="retro" TO="Cypher"
+bobp chat "<persona> retro: <findings>. Backlog items: <items>" --persona <Name> --cmd retro --to Cypher
 ```
 
 ### Step 10 — Cypher: Launch
@@ -236,7 +241,7 @@ Cypher *pm launch <sprint>
 
 **Handoff:**
 ```bash
-make chat MSG="*pm launch <sprint>. Sprint complete." PERSONA="Cypher" CMD="pm launch" TO="all"
+bobp chat "*pm launch <sprint>. Sprint complete." --persona Cypher --cmd "pm launch" --to all
 ```
 
 **Sprint is complete** when Cypher posts `*pm launch`.
@@ -269,5 +274,5 @@ make chat MSG="*pm launch <sprint>. Sprint complete." PERSONA="Cypher" CMD="pm l
 - **No skipping gates**: Smith's gates after steps 1 and 2 are mandatory. Never auto-proceed.
 - **Fix Bloop scope**: Fix Bloop targets the failing phase only — never restart the full sprint.
 - **State saves**: Every persona saves state before every handoff (see bob-protocol State Management).
-- **Chat first**: Post the handoff `make chat` call BEFORE switching. The next persona reads CHAT.md on entry.
+- **Chat first**: Post the handoff `bobp chat` call BEFORE switching. The next persona reads CHAT.md on entry.
 - **Retro is required**: Step 9 is not optional. Retro output is the input to the next sprint's backlog.

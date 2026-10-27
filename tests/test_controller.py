@@ -164,3 +164,37 @@ class TestNerdDockController(unittest.TestCase):
             time.sleep(0.01)
 
         self.assertTrue(self.controller.is_model_loaded())
+
+
+class TestInputTool(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mock_sub = MockSubprocess()
+        self.controller = NerdDockController(
+            executable_path="/mock/bin/nerd-dictation", input_tool="YDOTOOL"
+        )
+
+    @patch("subprocess.Popen")
+    def test_begin_passes_input_tool(self, mock_popen: patch) -> None:
+        mock_popen.side_effect = self.mock_sub.Popen
+        self.assertTrue(self.controller.begin_dictation())
+        args = self.mock_sub.spawned_processes[0].args
+        self.assertIn("--simulate-input-tool", args)
+        self.assertEqual(args[args.index("--simulate-input-tool") + 1], "YDOTOOL")
+
+    @patch.dict("os.environ", {"XDG_RUNTIME_DIR": "/run/user/x"}, clear=False)
+    @patch("os.path.exists", return_value=False)
+    @patch("shutil.which", return_value="/usr/bin/ydotoold")
+    @patch("subprocess.Popen")
+    def test_input_daemon_lifecycle(self, mock_popen, which, exists) -> None:
+        del which, exists
+        self.controller.start_input_daemon()
+        mock_popen.assert_called_once_with(
+            ["/usr/bin/ydotoold", "--socket-path=/run/user/x/.ydotool_socket"]
+        )
+        self.controller.stop_input_daemon()
+        mock_popen.return_value.terminate.assert_called_once()
+
+    @patch("subprocess.Popen")
+    def test_input_daemon_skipped_for_other_tools(self, mock_popen) -> None:
+        NerdDockController(input_tool="XDOTOOL").start_input_daemon()
+        mock_popen.assert_not_called()

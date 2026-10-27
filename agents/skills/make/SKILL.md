@@ -1,126 +1,109 @@
 ---
 name: make
-description: Invoke project Makefile targets. All targets route through mkf automatically — output is captured to build/build.out, not the context window. Use V= to control verbosity.
-triggers: ["*make", "*mkf", "*build"]
+description: Wrap a project's own `make <target>` with output capture (build/build.out) and a CHAT.md status post. Use `bobp make [-v|-vv|-vvv] <target>` — never bare `make`.
+triggers: ["*make", "*build"]
 ---
 
-One-line summary: Run `make <target>` — never call mkf.py directly, never pipe make output.
+One-line summary: Run `bobp make <target>` — never call bare `make`, never call `bobp.tools.make` directly, never pipe the output.
 
 # Make Skill
+
+## Load this BEFORE your first raw build command
+
+If a `Makefile` exists in the repo root, check what targets it defines (or load this skill)
+**before** running any raw `pytest`/`ruff`/`pylint`/`pip install`/`.venv`-or-`venv`-prefixed
+command via Bash — not after one fails or after you've already piped output once. Don't wait
+to discover a target exists.
+
+## Ownership: this project's Makefile is not bob's
+
+`bobp` does not install, generate, or modify this project's `Makefile`. There is no
+`Makefile.prj`, no `Makefile.bob`, no `ifdef MKF_ACTIVE` split — just one ordinary Makefile
+that belongs entirely to this project. `bobp make` is a generic wrapper that runs whatever
+target you name in *that* Makefile; it has no opinion about what targets exist.
 
 ## The only correct invocation patterns
 
 ```bash
-make <target>              # silent — exit code + 10-line tail on finish
-make <target> V=-v         # show stderr live
-make <target> V=-vv        # show stderr + failure lines live
-make <target> V=-vvv       # show all output live
+bobp make <target>              # silent — exit code + 10-line tail on finish
+bobp make -v <target>           # show stderr live
+bobp make -vv <target>          # show stderr + failure lines live
+bobp make -vvv <target>         # show all output live
 ```
 
-`V=` is the only way to control verbosity. There is no other interface.
+The verbosity flag comes **before** the target (`bobp make -vv test`, not `bobp make test -vv`
+and not `bobp make test V=-vv`) — `bobp make` parses its own argv, it does not pass `V=` through
+to make.
 
 ## NEVER do these things
 
 ```bash
-# WRONG — calls the implementation directly, bypasses make entirely
-python agents/tools/mkf.py -vv <target>
-./agents/tools/mkf.py <target>
+# WRONG — bypasses capture entirely, prints straight to the terminal/context
+make <target>
 
-# WRONG — pipes defeat mkf and flood the context window
-make <target> 2>&1 | tail -20
-make <target> | grep error
-make <target> 2>&1
+# WRONG — calls the implementation module directly
+python -m bobp.tools.make -vv <target>
 
-# WRONG — capturing output into context
-result=$(make <target>)
+# WRONG — pipes defeat the capture and flood the context window
+bobp make <target> 2>&1 | tail -20
+bobp make <target> | grep error
+result=$(bobp make <target>)
 ```
-
-`mkf.py` is an internal implementation file. It is not a CLI tool for agents. Running it directly bypasses the Makefile, breaks the `MKF_ACTIVE` environment flag, and produces incorrect behavior.
 
 ## How to inspect build output
 
-After any `make` run, the full log is at `build/build.out`. Search it directly — do not re-run the build with pipes.
+After any `bobp make` run, the full log is at `build/build.out`. Search or tail it directly —
+do not re-run the build with pipes.
 
 ```bash
+# See last N lines of output (use instead of bobp make <target> 2>&1 | tail -N)
+tail -n 30 build/build.out
+
+# Search for failures
 grep -i "error\|fail\|warning" build/build.out
 grep -n "pattern" build/build.out
 grep -A5 "TestFoo" build/build.out
 ```
 
-Use `V=-vv` during the run if you want failure lines to appear live. Use `grep build/build.out` after the run if you need to search the full log.
+Use `-vv` during the run if you want failure lines to appear live. Use `tail`/`grep` on
+`build/build.out` after the run if you need to see the results — **never pipe `bobp make`
+output**.
 
 ## Discover available targets
 
-Always check what targets exist before assuming:
+This project's Makefile is not bob-managed, so there's no bob-authored `bobp make help` guarantee.
+Check what the project itself defines:
 
 ```bash
-make help
+bobp make help                              # if the project defines one
+grep -E '^[a-zA-Z_-]+:' Makefile       # otherwise, read the target names directly
 ```
 
-## What happens when you run `make <target>`
+## What happens when you run `bobp make <target>`
 
-1. Make invokes the mkf wrapper automatically
-2. mkf captures all stdout/stderr to `build/build.out`
-3. mkf prints the last 10 lines when the build finishes
-4. mkf posts build status to `agents/CHAT.md`
-5. Make returns the exit code — 0 = pass, non-zero = fail
+1. `bobp make` shells out to `make <target>` in this project's own Makefile
+2. It captures all stdout/stderr to `build/build.out`
+3. It prints the last 10 lines when the build finishes
+4. It posts build status to `agents/CHAT.md`
+5. It exits with make's exit code — 0 = pass, non-zero = fail
 
-You never need to orchestrate any of this. Running `make <target>` is the complete action.
+You never need to orchestrate any of this yourself. Running `bobp make <target>` is the
+complete action.
 
 ## Verbosity reference
 
 | Flag | What appears in context |
 |------|------------------------|
 | *(none)* | 10-line tail + exit code only |
-| `V=-v` | stderr live + 10-line tail |
-| `V=-vv` | stderr + failure/error lines live |
-| `V=-vvv` | all output live (large builds will be noisy) |
+| `-v` | stderr live + 10-line tail |
+| `-vv` | stderr + failure/error lines live |
+| `-vvv` | all output live (large builds will be noisy) |
 
-Use `V=-v` or `V=-vv` when you need to see what went wrong during the run. Use `grep build/build.out` when the build is already done.
-
-## Available targets
-
-```bash
-make help    # always up-to-date — prefer this over any hardcoded list
-```
-
-Common targets:
-
-| Command | Description |
-|---------|-------------|
-| `make help` | Show all targets |
-| `make test` | Run unit tests |
-| `make tldr` | Show TL;DR summaries from project files |
-| `make via_index` | Build the via symbol index |
-| `make install_bob TARGET=/path` | Install BobProtocol into a project |
-| `make update_bob TARGET=/path` | Update agents in a project |
-| `make pull_bob SRC=/path` | Pull updates from another BobProtocol project |
-| `make clean_bob` | Remove generated symlinks and reset state files |
+Use `-v` or `-vv` when you need to see what went wrong during the run. Use
+`grep build/build.out` when the build is already done.
 
 ## Adding a new target
 
-If a target does not exist, add it to the Makefile — do not invoke tools directly.
-
-The Makefile has two blocks gated by `MKF_ACTIVE`. **Both lines below go inside the Makefile — neither is a shell command.**
-
-```makefile
-ifdef MKF_ACTIVE
-
-# Real recipe — runs inside mkf's subprocess environment
-lint: ## Run linting checks
-    @ruff check .
-
-else
-
-# Public stub — this Makefile line is what triggers mkf; do NOT replicate it at the shell
-lint: ## Run linting checks
-    @./agents/tools/mkf.py $(V) $@
-
-endif
-```
-
-The `./agents/tools/mkf.py` line is Makefile plumbing. It exists so that typing `make lint` at the shell automatically routes through mkf. It is not an indication that agents should call `mkf.py` directly.
-
-In an installed project, add project-specific targets to `Makefile.prj`. Bob manages `agents/Makefile.bob` and never modifies `Makefile.prj`.
-
-Targets that bypass mkf (output must reach the terminal directly, like `help` and `chat`) are defined only in the `else` block.
+Add a normal target to this project's own Makefile, the same way you would in any other repo —
+no special `ifdef` block, no second file to keep in sync. `bobp make <target>` picks it up
+automatically since it just runs `make <target>` under the hood.

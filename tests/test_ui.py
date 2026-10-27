@@ -38,6 +38,7 @@ class TestNerdDockIndicator(unittest.TestCase):
         self.patchers = [
             patch("nerd_dock.ui_indicator.GLib", self.mock_glib),
             patch("nerd_dock.ui_indicator.Gtk", self.mock_gtk),
+            patch("nerd_dock.ui_indicator.Gio", MagicMock()),
             patch(
                 "nerd_dock.ui_indicator.AyatanaAppIndicator3",
                 self.mock_appindicator,
@@ -86,7 +87,7 @@ class TestNerdDockIndicator(unittest.TestCase):
         self.controller._target_state = "RECORDING"
         self.indicator.update_ui(STATE_TRANSITIONING)
         self.mock_indicator_instance.set_icon_full.assert_called_with(
-            "nerd-dock-stopped", "Dictation: Starting Up..."
+            "nerd-dock-paused", "Dictation: Starting Up..."
         )
         self.indicator.menu_status.set_label.assert_called_with(
             "Status: Starting Up (Loading Model)..."
@@ -124,6 +125,27 @@ class TestNerdDockIndicator(unittest.TestCase):
             self.indicator.menu_status.set_label.assert_called_with(
                 "Status: Starting Up (Loading Model)..."
             )
+
+    def test_toggle_dictation_routes_by_state(self) -> None:
+        with (
+            patch.object(self.indicator, "_on_start_clicked") as start,
+            patch.object(self.indicator, "_on_stop_clicked") as stop,
+        ):
+            self.controller.set_state("STOPPED")
+            self.indicator.toggle_dictation()
+            start.assert_called_once()
+            self.controller.set_state("RECORDING")
+            self.indicator.toggle_dictation()
+            stop.assert_called_once()
+            self.controller.set_state(STATE_TRANSITIONING)
+            self.indicator.toggle_dictation()
+            start.assert_called_once()
+            stop.assert_called_once()
+
+    def test_enable_remote_toggle_registers_action(self) -> None:
+        self.indicator.enable_remote_toggle()
+        self.indicator._gio_app.add_action.assert_called_once()
+        self.indicator._gio_app.register.assert_called_once()
 
     def test_on_start_clicked_failure(self) -> None:
         with patch.object(

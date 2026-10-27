@@ -8,22 +8,21 @@
 
 Nerd-Dock is built in Python utilizing **GObject Introspection (PyGObject)** to directly bind GNOME system frameworks. This ensures a lightweight execution footprint without needing bloated web wrappers or memory-heavy desktop containers.
 
-### Step 1: Install Ubuntu System Libraries
+### Step 1: Install Fedora System Libraries
 Before setting up python modules, you need to install the GObject wrapper libraries for GTK 3, Ayatana AppIndicator, and the Libnotify desktop notification framework. Run the following command:
 
 ```bash
-# Automatically install all required system packages via apt
+# Automatically install all required system packages via dnf
 make install-system-deps
 ```
 
 Alternatively, you can run the commands manually:
 ```bash
-sudo apt-get update
-sudo apt-get install -y \
-    python3-gi \
-    gir1.2-gtk-3.0 \
-    gir1.2-ayatanaappindicator3-0.1 \
-    gir1.2-notify-0.7
+sudo dnf install -y \
+    python3-gobject \
+    gtk3 \
+    libayatana-appindicator-gtk3 \
+    libnotify
 ```
 
 ### Step 2: Choose Installation Strategy
@@ -190,3 +189,15 @@ Yes! The test suite is fully headless. Our tests mock out system GTK elements, t
 ```bash
 make test
 ```
+
+## 🎹 7. Keyboard Shortcut (Toggle)
+
+On Wayland, apps cannot see global key releases, so hold-to-talk is not available; a toggle shortcut is. While the app runs it exposes a `toggle` action on the session bus (stopped → start, recording/paused → stop). The tray icon turns **amber** with a "Loading model" notification while starting, and red with a "Listening" notification once the mic is live.
+
+In GNOME: *Settings → Keyboard → Custom Shortcuts → Add*, command:
+
+```bash
+gapplication action io.github.drusifer.NerdDock toggle
+```
+
+Then assign your shortcut (e.g. Ctrl+Super+Space).

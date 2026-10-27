@@ -75,7 +75,7 @@ graph TD
 
 ### 📋 Prerequisites
 
-Nerd-Dock is optimized for **Ubuntu 26.04** (GNOME 50). It relies on native system libraries for GObject Introspection, GTK+ 3.0, Ayatana AppIndicator, and Desktop Notifications:
+Nerd-Dock is optimized for **Fedora Silverblue / Workstation** (GNOME). It relies on native system libraries for GObject Introspection, GTK+ 3.0, Ayatana AppIndicator, and Desktop Notifications:
 
 ```bash
 # Automatically install all required system dependencies (requires sudo)
@@ -84,12 +84,11 @@ make install-system-deps
 
 Alternatively, you can install them manually:
 ```bash
-sudo apt-get update
-sudo apt-get install -y \
-    python3-gi \
-    gir1.2-gtk-3.0 \
-    gir1.2-ayatanaappindicator3-0.1 \
-    gir1.2-notify-0.7
+sudo dnf install -y \
+    python3-gobject \
+    gtk3 \
+    libayatana-appindicator-gtk3 \
+    libnotify
 ```
 
 ### 📦 Installation

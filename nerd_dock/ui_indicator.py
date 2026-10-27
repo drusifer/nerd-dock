@@ -15,7 +15,7 @@ try:
 except (ValueError, ImportError):
     HAS_NOTIFY = False
 
-from gi.repository import AyatanaAppIndicator3, GLib, Gtk
+from gi.repository import AyatanaAppIndicator3, Gio, GLib, Gtk
 
 from nerd_dock.controller import (
     STATE_RECORDING,
@@ -27,6 +27,9 @@ from nerd_dock.controller import (
 from nerd_dock.monitor import NerdDictationMonitor
 
 logger = logging.getLogger("nerd_dock.ui_indicator")
+
+# D-Bus application id; the GNOME shortcut command targets this name.
+APP_ID = "io.github.drusifer.NerdDock"
 
 # Locate resources directory
 RESOURCES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")
@@ -153,6 +156,8 @@ class NerdDockIndicator:
         elif state == STATE_TRANSITIONING:
             icon_name = "nerd-dock-stopped"  # fallback for brief transitional state
             target = self.controller.get_target_state()
+            if target == STATE_RECORDING:
+                icon_name = "nerd-dock-paused"  # amber: loading, not listening yet
             prev = getattr(self.controller, "_previous_stable_state", STATE_STOPPED)
             if target == STATE_RECORDING and prev == STATE_STOPPED:
                 label = "Dictation: Starting Up..."
@@ -228,6 +233,29 @@ class NerdDockIndicator:
         elif state == STATE_STOPPED and old_ui_state != STATE_TRANSITIONING:
             self._send_notification("Nerd Dictation", "Dictation Stopped.")
 
+    def enable_remote_toggle(self) -> None:
+        """Exposes a `toggle` action on the session bus for a GNOME shortcut.
+
+        Bind a custom shortcut to:
+        gapplication action io.github.drusifer.NerdDock toggle
+        """
+        self._gio_app = Gio.Application.new(APP_ID, Gio.ApplicationFlags.NON_UNIQUE)
+        action = Gio.SimpleAction.new("toggle", None)
+        action.connect("activate", lambda _a, _p: self.toggle_dictation())
+        self._gio_app.add_action(action)
+        self._gio_app.register(None)
+        logger.info("Toggle action available on D-Bus as %s", APP_ID)
+
+    def toggle_dictation(self) -> None:
+        """Starts dictation when stopped, stops it when recording or paused."""
+        state = self.controller.get_state()
+        if state == STATE_STOPPED:
+            self._on_start_clicked(None)
+        elif state in (STATE_RECORDING, STATE_SUSPENDED):
+            self._on_stop_clicked(None)
+        else:
+            logger.info("Ignoring toggle while %s", state)
+
     # Menu Action Handlers
 
     def _on_start_clicked(self, _widget: Gtk.MenuItem) -> None:
@@ -286,6 +314,8 @@ class NerdDockIndicator:
         if state in (STATE_RECORDING, STATE_SUSPENDED, STATE_TRANSITIONING):
             logger.info("Stopping active nerd-dictation daemon process on exit...")
             self.controller.cancel_dictation()
+
+        self.controller.stop_input_daemon()
 
         # 3. Shutdown notification system cleanly
         if HAS_NOTIFY:

@@ -1,6 +1,8 @@
 """Nerd-Dock Subprocess Controller and State Machine."""
 
 import logging
+import os
+import shutil
 import subprocess  # nosec B404
 import threading
 import time
@@ -21,15 +23,46 @@ class NerdDockController:
         self,
         executable_path: str = "/home/drusifer/.local/bin/nerd-dictation",
         cookie_path: str | None = None,
+        input_tool: str | None = None,
     ) -> None:
         self._state: str = STATE_STOPPED
         self.executable_path: str = executable_path
         self.cookie_path: str | None = cookie_path
+        self.input_tool: str | None = input_tool
+        self._input_daemon: subprocess.Popen | None = None
         self._process: subprocess.Popen | None = None  # vulture: ignore
         self._previous_stable_state: str = STATE_STOPPED
         self._transition_start_time: float = 0.0
         self._target_state: str | None = None
         self._model_loaded: bool = False
+
+    def start_input_daemon(self) -> None:
+        """Starts ydotoold (needed to type on Wayland) when YDOTOOL is selected.
+
+        Sets YDOTOOL_SOCKET so both the daemon and nerd-dictation agree on it.
+        """
+        if self.input_tool != "YDOTOOL":
+            return
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")  # nosec B108
+        socket_path = os.path.join(runtime_dir, ".ydotool_socket")
+        os.environ["YDOTOOL_SOCKET"] = socket_path
+        daemon = shutil.which("ydotoold")
+        if not daemon or os.path.exists(socket_path):
+            logger.info("ydotoold not started (missing or socket already present).")
+            return
+        try:
+            self._input_daemon = subprocess.Popen(  # nosec B603
+                [daemon, f"--socket-path={socket_path}"],
+            )
+            logger.info("Started ydotoold on %s", socket_path)
+        except OSError as e:
+            logger.error("Failed to start ydotoold: %s", e)
+
+    def stop_input_daemon(self) -> None:
+        """Terminates ydotoold if this controller started it."""
+        if self._input_daemon:
+            self._input_daemon.terminate()
+            self._input_daemon = None
 
     def get_state(self) -> str:
         """Returns the current state."""
@@ -105,6 +138,9 @@ class NerdDockController:
                     break
         if not has_verbose:
             cmd.extend(["--verbose", "3"])
+
+        if self.input_tool:
+            cmd.extend(["--simulate-input-tool", self.input_tool])
 
         if options:
             cmd.extend(options)

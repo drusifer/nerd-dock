@@ -1,232 +1,100 @@
-.DEFAULT_GOAL := help
+# Makefile.prj - Project Automation Targets for Nerd-Dock
 
-# ── Bob Protocol Configuration ───────────────────────────────────────────────
-_IS_BOB_ENTRY := $(filter %Makefile %Makefile.bob,$(firstword $(MAKEFILE_LIST)))
+VENV = venv
+PYTHON = $(VENV)/bin/python
+PIP = $(VENV)/bin/pip
+SYSDEPS_STAMP = .system-deps.stamp
+DICTATION_DEPS_STAMP = .dictation-deps.stamp
+DICTATION_HOME = $(HOME)/.local/share/nerd-dictation
+DICTATION_BIN = $(HOME)/.local/bin/nerd-dictation
+DICTATION_MODEL_NAME = vosk-model-small-en-us-0.15
+DICTATION_MODEL_DIR = $(HOME)/.config/nerd-dictation/model
+VENV_STAMP = $(VENV)/.setup.stamp
 
-ifdef MKF_ACTIVE
+.PHONY: install-dictation all setup run test lint format clean help install-system-deps install
 
-# ── Re-invocation Layer ──────────────────────────────────────────────────────
-# Included by mkf.py to run the actual target.
+all: help
 
-# Include the project's original targets.
-# We try Makefile.prj (legacy) and Makefile (if we are running as Makefile.bob).
-ifneq ($(firstword $(MAKEFILE_LIST)),Makefile)
--include Makefile
-endif
--include Makefile.prj
-
-# ── Bob Protocol Targets ─────────────────────────────────────────────────────
-
-.PHONY: tldr test via_index install_bob update_bob pull_bob clean_bob diff_bob
-
-tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
-	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
-
-ifeq ($(wildcard Makefile.prj),)
-test: ## Run unit tests
-	@python -m unittest discover -s tests
-endif
-
-via_index: ## Build the via index required by the via MCP server
-	@via index "$(CURDIR)"
-
-install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
-	@[ -n "$(TARGET)" ] || { echo "Usage: make install_bob TARGET=/path/to/project"; exit 1; }
-	@[ -d "$(TARGET)" ] || { echo "Error: $(TARGET) does not exist"; exit 1; }
-	@echo "Installing BobProtocol into $(TARGET)..."
-	@rsync -a \
-		--exclude='*.docs/context.md' \
-		--exclude='*.docs/current_task.md' \
-		--exclude='*.docs/next_steps.md' \
-		--exclude='CHAT.md' \
-		agents/ $(TARGET)/agents/
-	@echo "Initialising agent state files..."
-	@for dir in $(TARGET)/agents/*.docs; do \
-		cp agents/templates/_template_context.md    $$dir/context.md; \
-		cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		cp agents/templates/_template_next_steps.md $$dir/next_steps.md; \
-	done
-	@cp agents/templates/_template_CHAT.md $(TARGET)/agents/CHAT.md
-	@echo "Installing Makefile into $(TARGET)..."
-	@if [ -f "$(TARGET)/Makefile" ]; then \
-		if grep -q "MKF_ACTIVE" "$(TARGET)/Makefile"; then \
-			cp Makefile "$(TARGET)/Makefile" && echo "  Updated: Makefile (bob-managed)"; \
-		else \
-			cp Makefile "$(TARGET)/Makefile.bob" && echo "  Installed: Makefile.bob"; \
-			if ! grep -q "include Makefile.bob" "$(TARGET)/Makefile"; then \
-				echo "include Makefile.bob" | cat - "$(TARGET)/Makefile" > "$(TARGET)/Makefile.tmp" && mv "$(TARGET)/Makefile.tmp" "$(TARGET)/Makefile"; \
-				echo "  Modified: Makefile (included Makefile.bob at top)"; \
-			fi; \
-		fi; \
-	else \
-		cp Makefile "$(TARGET)/Makefile" && echo "  Installed: Makefile (bob-managed)"; \
-	fi
-	@echo "Setting up Claude skill links..."
-	@python $(TARGET)/agents/tools/setup_agent_links.py
+help: ## Show this help message
+	@echo "Nerd-Dock Development Automation"
 	@echo ""
-	@echo "Done. BobProtocol installed in $(TARGET)"
-	@echo "Run 'make tldr' inside $(TARGET) to verify."
+	@echo "Targets:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-update_bob: ## Update bob-protocol personas, skills, tools, and templates in a target project (usage: make update_bob TARGET=/path/to/project)
-	@[ -n "$(TARGET)" ] || { echo "Usage: make update_bob TARGET=/path/to/project"; exit 1; }
-	@[ -d "$(TARGET)" ] || { echo "Error: $(TARGET) does not exist"; exit 1; }
-	@echo "Updating BobProtocol in $(TARGET)..."
-	@rsync -a agents/skills/ $(TARGET)/agents/skills/
-	@rsync -a agents/tools/  $(TARGET)/agents/tools/
-	@rsync -a agents/templates/ $(TARGET)/agents/templates/
-	@for f in agents/*.docs/SKILL.md; do \
-		rsync -a "$$f" "$(TARGET)/$$f"; \
-	done
-	@echo "Ensuring agent state files are initialised..."
-	@for dir in $(TARGET)/agents/*.docs; do \
-		[ -f $$dir/context.md ]      || cp agents/templates/_template_context.md      $$dir/context.md; \
-		[ -f $$dir/current_task.md ] || cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		[ -f $$dir/next_steps.md ]   || cp agents/templates/_template_next_steps.md   $$dir/next_steps.md; \
-	done
-	@[ -f $(TARGET)/agents/CHAT.md ] || cp agents/templates/_template_CHAT.md $(TARGET)/agents/CHAT.md
-	@echo "Updating Makefile in $(TARGET)..."
-	@if [ -f "$(TARGET)/Makefile" ]; then \
-		if grep -q "MKF_ACTIVE" "$(TARGET)/Makefile"; then \
-			cp Makefile "$(TARGET)/Makefile" && echo "  Updated: Makefile (bob-managed)"; \
-		else \
-			cp Makefile "$(TARGET)/Makefile.bob" && echo "  Updated: Makefile.bob"; \
-			if ! grep -q "include Makefile.bob" "$(TARGET)/Makefile"; then \
-				echo "include Makefile.bob" | cat - "$(TARGET)/Makefile" > "$(TARGET)/Makefile.tmp" && mv "$(TARGET)/Makefile.tmp" "$(TARGET)/Makefile"; \
-				echo "  Modified: Makefile (included Makefile.bob at top)"; \
-			fi; \
-		fi; \
-	else \
-		cp Makefile "$(TARGET)/Makefile" && echo "  Updated: Makefile (bob-managed)"; \
-	fi
-	@echo "Updating Claude skill links..."
-	@python $(TARGET)/agents/tools/setup_agent_links.py
-	@echo ""
-	@echo "Done. BobProtocol updated in $(TARGET)"
+install-system-deps: $(SYSDEPS_STAMP) ## Install Fedora system packages via dnf (requires sudo; once)
 
-pull_bob: ## Pull bob-protocol personas, skills, tools, and templates from another project (usage: make pull_bob SRC=/path/to/project)
-	@[ -n "$(SRC)" ] || { echo "Usage: make pull_bob SRC=/path/to/project"; exit 1; }
-	@[ -d "$(SRC)" ] || { echo "Error: $(SRC) does not exist"; exit 1; }
-	@echo "Pulling BobProtocol updates from $(SRC)..."
-	@rsync -a --existing $(SRC)/agents/skills/    agents/skills/
-	@rsync -a --existing $(SRC)/agents/tools/     agents/tools/
-	@rsync -a --existing $(SRC)/agents/templates/ agents/templates/
-	@for f in agents/*.docs/SKILL.md; do \
-		[ -f "$(SRC)/$$f" ] && rsync -a "$(SRC)/$$f" "$$f" || true; \
-	done
-	@echo ""
-	@echo "Done. BobProtocol pulled from $(SRC)"
+$(SYSDEPS_STAMP):
+	@echo "Installing system dependencies via dnf..."
+	sudo dnf install -y \
+		python3-gobject \
+		gtk3 \
+		libayatana-appindicator-gtk3 \
+		libnotify
+	touch $@
 
-clean_bob: ## Remove generated symlinks and reset agent memory/state files
-	@echo "Removing generated symlinks..."
-	@python agents/tools/teardown_agent_links.py --keep-mcp
-	@echo "Resetting agent state files to templates..."
-	@for dir in agents/*.docs; do \
-		cp agents/templates/_template_context.md    $$dir/context.md; \
-		cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		cp agents/templates/_template_next_steps.md $$dir/next_steps.md; \
-	done
-	@cp agents/templates/_template_CHAT.md agents/CHAT.md
-	@echo "Done. Environment cleaned and state reset."
+install-dictation: $(DICTATION_BIN) $(DICTATION_MODEL_DIR)/am ## Install nerd-dictation, vosk, a model and ydotool (Wayland typing)
 
-diff_bob: ## Compare bob-protocol personas, skills, tools, and templates with a target project (usage: make diff_bob TARGET=/path/to/project)
-	@[ -n "$(TARGET)" ] || { echo "Usage: make diff_bob TARGET=/path/to/project"; exit 1; }
-	@[ -d "$(TARGET)" ] || { echo "Error: $(TARGET) does not exist"; exit 1; }
-	@echo "Diffing BobProtocol: $(CURDIR) vs $(TARGET)"
-	@echo ""
-	@for dir in agents/skills agents/tools agents/templates; do \
-		if [ -d "$(TARGET)/$$dir" ]; then \
-			diff -rq "$$dir" "$(TARGET)/$$dir"; \
-		else \
-			echo "Only in this project: $$dir/"; \
-		fi; \
-	done || true
-	@for f in agents/*.docs/SKILL.md; do \
-		tgt="$(TARGET)/$$f"; \
-		if [ -f "$$tgt" ]; then \
-			diff -q "$$f" "$$tgt" || true; \
-		else \
-			echo "Only in this project: $$f"; \
-		fi; \
-	done
-	@echo ""
-	@echo "Done."
+$(DICTATION_DEPS_STAMP):
+	sudo dnf install -y ydotool git curl unzip pulseaudio-utils
+	touch $@
 
-else
+$(DICTATION_BIN): | $(DICTATION_DEPS_STAMP)
+	git clone https://github.com/ideasman42/nerd-dictation.git $(DICTATION_HOME) || git -C $(DICTATION_HOME) pull
+	python3 -m venv $(DICTATION_HOME)/venv
+	$(DICTATION_HOME)/venv/bin/pip install vosk
+	mkdir -p $(dir $@)
+	printf '#!/bin/sh\nexec "%s/venv/bin/python" "%s/nerd-dictation" "$$@"\n' "$(DICTATION_HOME)" "$(DICTATION_HOME)" > $@
+	chmod +x $@
 
-# ── Interception layer ───────────────────────────────────────────────────────
-# All targets except help, chat, install_bob, update_bob, pull_bob, and clean_bob route through mkf (agents/tools/mkf.py).
-# mkf captures output to build/build.out, posts status to CHAT.md,
-# and prints the last 10 lines on exit.
-#
-# Verbosity (set V=):
-#   make tldr              silent  — exit code only, full log in build/build.out
-#   make tldr V=-v         stderr to terminal
-#   make tldr V=-vv        stderr + filtered failures to terminal
-#   make tldr V=-vvv       stderr + full stdout to terminal
+$(DICTATION_MODEL_DIR)/am:
+	mkdir -p $(dir $(DICTATION_MODEL_DIR))
+	curl -L -o $(DICTATION_MODEL_NAME).zip https://alphacephei.com/vosk/models/$(DICTATION_MODEL_NAME).zip
+	unzip -q -o $(DICTATION_MODEL_NAME).zip -d $(dir $(DICTATION_MODEL_DIR))
+	rm -rf $(DICTATION_MODEL_DIR)
+	mv $(dir $(DICTATION_MODEL_DIR))$(DICTATION_MODEL_NAME) $(DICTATION_MODEL_DIR)
+	rm -f $(DICTATION_MODEL_NAME).zip
 
-.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_bob
+install: $(SYSDEPS_STAMP) install-dictation ## Install Nerd-Dock to the active python environment (pipx)
+	@echo "Installing Nerd-Dock to the current python environment..."
+	pipx install . --system-site-packages
 
-install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
-	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
+setup: $(VENV_STAMP) ## Create virtualenv and install dependencies
 
-update_bob: ## Update agents and skills in a project, preserving state (usage: make update_bob TARGET=/path/to/project)
-	@$(MAKE) MKF_ACTIVE=1 update_bob TARGET="$(TARGET)"
+$(VENV_STAMP): pyproject.toml | $(SYSDEPS_STAMP)
+	@echo "Setting up python virtual environment with system site packages..."
+	python3 -m venv --system-site-packages $(VENV)
+	$(PIP) install --upgrade pip
+	$(PIP) install -e .[dev]
+	touch $@
+	@echo "Setup complete. Virtual environment ready."
 
-pull_bob: ## Pull updates from another project using BobProtocol, preserving local state (usage: make pull_bob SRC=/path/to/project)
-	@$(MAKE) MKF_ACTIVE=1 pull_bob SRC="$(SRC)"
+run: $(VENV_STAMP) ## Run the Nerd-Dock tray application
+	@echo "Starting Nerd-Dock..."
+	PYTHONPATH=. $(PYTHON) nerd_dock/main.py
 
-clean_bob: ## Remove generated symlinks and reset agent memory/state files
-	@$(MAKE) MKF_ACTIVE=1 clean_bob
+test: $(VENV_STAMP) ## Run unit tests with pytest
+	@echo "Running unit tests..."
+	PYTHONPATH=. $(PYTHON) -m pytest tests/ --cov=nerd_dock --cov-report=term-missing
 
-diff_bob: ## Compare bob-protocol files with a target project, excluding state files (usage: make diff_bob TARGET=/path/to/project)
-	@$(MAKE) MKF_ACTIVE=1 diff_bob TARGET="$(TARGET)"
+lint: $(VENV_STAMP) ## Run comprehensive static analysis (ruff, radon, vulture, bandit, pylint)
+	@echo "=== Running Ruff Linter ==="
+	$(PYTHON) -m ruff check nerd_dock tests
+	@echo "=== Running Ruff Formatter (Check) ==="
+	$(PYTHON) -m ruff format --check nerd_dock tests
+	@echo "=== Running Radon (Complexity Gate) ==="
+	$(PYTHON) -m radon cc -s -nb nerd_dock
+	@echo "=== Running Vulture (Dead Code Detection) ==="
+	$(PYTHON) -m vulture nerd_dock
+	@echo "=== Running Bandit (Security Vulnerabilities) ==="
+	$(PYTHON) -m bandit -r nerd_dock
+	@echo "=== Running Pylint (Duplicate Code Check) ==="
+	$(PYTHON) -m pylint --disable=all --enable=duplicate-code nerd_dock
+	@echo "=== Static Analysis Completed Successfully ==="
 
-help: ## Show available make targets
-	@echo ""
-	@echo "  Build output filter (mkf) is active. All targets route through agents/tools/mkf.py."
-	@echo "  Full log: build/build.out   Status posted to: agents/CHAT.md"
-	@echo ""
-	@echo "  Verbosity: append V=-v | V=-vv | V=-vvv to any target"
-	@echo "    (none)   silent — exit code only"
-	@echo "    -v       stderr to terminal"
-	@echo "    -vv      stderr + failures/errors to terminal"
-	@echo "    -vvv     stderr + full stdout to terminal"
-	@echo ""
-	@echo "  Examples:"
-	@echo "    make pull_bob          # silent, log → build/build.out"
-	@echo "    make update_bob V=-vvv # full output"
-	@echo ""
-	@echo "  Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "    \033[36m%-22s\033[0m %s\n", $$1, $$2}'
-	@if [ -f Makefile.prj ]; then \
-		echo ""; \
-		echo "  Project targets (Makefile.prj):"; \
-		grep -E '^[a-zA-Z][a-zA-Z0-9_-]*:' Makefile.prj | \
-		awk 'BEGIN {FS = ":.*?## "}; /##/ {printf "    \033[36m%-22s\033[0m %s\n", $$1, $$2} !/##/ {split($$0,a,":"); printf "    \033[36m%-22s\033[0m\n", a[1]}'; \
-	fi
-	@echo ""
+format: $(VENV_STAMP) ## Automatically format all code using Ruff
+	$(PYTHON) -m ruff format nerd_dock tests
+	$(PYTHON) -m ruff check --fix nerd_dock tests
 
-chat: ## Post a message to CHAT.md (usage: make chat MSG="<msg>" [PERSONA="<name>"] [CMD="<cmd>"] [TO="<recipient>"])
-	@[ -n "$(MSG)" ] || { echo "Usage: make chat MSG=\"<message>\" [PERSONA=\"<name>\"] [CMD=\"<cmd>\"] [TO=\"<recipient>\"]"; exit 1; }
-	@python agents/tools/chat.py "$(MSG)" \
-		$(if $(PERSONA),--persona "$(PERSONA)") \
-		$(if $(CMD),--cmd "$(CMD)") \
-		$(if $(TO),--to "$(TO)")
-
-test: ## Run unit tests
-	@./agents/tools/mkf.py $(V) $@
-
-via_index: ## Build the via index required by the via MCP server
-	@./agents/tools/mkf.py $(V) $@
-
-# Interception logic: 
-# If we are the entry point (direct make call), intercept everything.
-# If we are included, we only provide targets, unless specified.
-ifeq ($(MKF_ACTIVE),)
-ifdef _IS_BOB_ENTRY
-%:
-	@./agents/tools/mkf.py $(V) $@
-endif
-endif
-
-endif
+clean: ## Clean up build artifacts and caches
+	rm -rf .pytest_cache .coverage htmlcov .ruff_cache build dist *.egg-info
+	find . -type d -name "__pycache__" -exec rm -rf {} +
