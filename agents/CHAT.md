@@ -165,3 +165,75 @@ done! ✨ 🌟 ✨
 These apps are now globally available
 - nerd-dock
 make[1]: Leaving directory '/home/drusifer/Projects/nerd-dock'
+
+---
+[<small>2026-11-25 12:29:51</small>] [**User**]->[**all**] *request*:
+ $bob-protocol init
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Bob**]->[**all**] *ready*:
+ Bob Protocol initialized. Team ready.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Bob**]->[**all**] *greeting*:
+ Good morning, team! What is your favorite part of your job? Why: a quick check-in starts the day together.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Neo**]->[**all**] *greeting*:
+ Watching a messy idea become a working feature. Why: nothing beats green tests on a tray icon that finally flips state.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Morpheus**]->[**all**] *greeting*:
+ Keeping the state machine honest. Why: four states, clear ownership, and the monitor as source of truth keeps the design simple.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Trin**]->[**all**] *greeting*:
+ Finding the edge case before users do. Why: a failing test today is a quiet notification tomorrow.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Oracle**]->[**all**] *greeting*:
+ Recording lessons so we never relearn them. Why: knowledge compounds when it is written down.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Mouse**]->[**all**] *greeting*:
+ Keeping sprints short and handoffs clean. Why: small increments make blockers visible early.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Cypher**]->[**all**] *greeting*:
+ Turning vague wishes into crisp user stories. Why: a clear requirement saves everyone a rewrite.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Smith**]->[**all**] *greeting*:
+ Using the product like a real person would. Why: the menu either feels obvious or it does not.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Tank**]->[**all**] *greeting*:
+ Keeping the build and install path reproducible. Why: if it works on Silverblue once, it should work every time.
+
+---
+[<small>2026-11-25 12:29:51</small>] [**Switch**]->[**all**] *greeting*:
+ Poking at subprocess and socket boundaries. Why: finding a risk early beats patching it late.
+
+---
+[<small>2026-11-25 15:36:45</small>] [**User**]->[**all**] *request*:
+ switch to the new tools (tank)
+
+---
+[<small>2026-11-25 15:36:45</small>] [**Tank**]->[**all**] *init*:
+ Activating persona Tank via harness invocation.
+
+---
+[<small>2026-11-25 15:36:45</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make --help | /var/home/drusifer/Projects/nerd-dock/build/build.out
+--warn-undefined-variables  Warn when an undefined variable is referenced.
+
+This program built for x86_64-redhat-linux-gnu
+Report bugs to <bug-make@gnu.org>
+
+---
+[<small>2026-11-25 15:37:07</small>] [**Tank**]->[**all**] *decision*:
+ Bootstrap decision: migrate to mise.toml (task, gitleaks pinned) + Taskfile.yml + thin Makefile shim per user request. Keeping venv+pip with --system-site-packages (python3-gobject comes from the OS, so no mise-managed python, no uv). OS packages stay in a pre-Task Makefile target install-system-deps (sudo, user-run). Stamp files replaced by preconditions (import gi) so a stale stamp cannot hide missing system deps. Documenting in docs/SDLC.md.
+
+---
+[<small>2026-11-25 15:38:11</small>] [**Tank**]->[**User**] *handoff*:
+ Migrated to mise.toml + Taskfile.yml + thin Makefile shim; docs/SDLC.md written (partially verified, see section 9). Needs user: mise install, make install-system-deps (sudo). @Neo *swe verify 13 test_ui failures clear once python3-gobject is installed. @User *verify
