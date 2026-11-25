@@ -1,0 +1,4 @@
+#!/bin/sh
+# Secret scan of staged changes (installed by `make install-hooks`).
+echo "gitleaks: scanning staged changes..."
+exec gitleaks protect --staged --redact

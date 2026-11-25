@@ -81,6 +81,11 @@ class NerdDictationMonitor:
 
     def _determine_state(self) -> str:
         """Evaluates cookie and OS processes to determine active dictation state."""
+        # Streaming backend: no cookie or process, the stream is the truth.
+        stream = getattr(self._controller, "stream", None)
+        if stream:
+            return stream.state
+
         # 1. Check if cookie file exists
         if not os.path.exists(self.cookie_path):
             return STATE_STOPPED
@@ -170,6 +175,21 @@ class NerdDictationMonitor:
                             "Spawned nerd-dictation process exited "
                             "unexpectedly with code %s.",
                             self._controller._process.poll(),
+                        )
+                        self._controller.set_state(STATE_STOPPED)
+                        if self._callback:
+                            self._trigger_callback(STATE_STOPPED)
+                        time.sleep(self.poll_interval)
+                        continue
+                    # 2b. Streaming session died before it ever started recording
+                    elif (
+                        prev_stable == STATE_STOPPED
+                        and getattr(self._controller, "stream", None)
+                        and self._controller.get_target_state() == STATE_RECORDING
+                    ):
+                        logger.warning(
+                            "Streaming STT stopped: %s",
+                            self._controller.stream.last_error,
                         )
                         self._controller.set_state(STATE_STOPPED)
                         if self._callback:

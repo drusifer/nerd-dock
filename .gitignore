@@ -227,5 +227,6 @@ __marimo__/
 .mcp.json
 .via/
 
-.system-deps.stamp
-.dictation-deps.stamp
+
+# Task checksum cache
+.task/

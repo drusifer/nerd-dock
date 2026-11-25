@@ -3,9 +3,12 @@
 import logging
 import os
 import shutil
+import socket
 import subprocess  # nosec B404
 import threading
 import time
+
+from nerd_dock.stt_stream import StreamingSTT
 
 # State Definitions
 STATE_STOPPED = "STOPPED"
@@ -16,6 +19,17 @@ STATE_TRANSITIONING = "TRANSITIONING"
 logger = logging.getLogger("nerd_dock.controller")
 
 
+def _socket_alive(path: str) -> bool:
+    """True if something is accepting connections on the unix socket."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(1.0)
+        try:
+            sock.connect(path)
+        except OSError:
+            return False
+    return True
+
+
 class NerdDockController:
     """Manages nerd-dictation subprocesses and tracks application states."""
 
@@ -24,7 +38,9 @@ class NerdDockController:
         executable_path: str = "/home/drusifer/.local/bin/nerd-dictation",
         cookie_path: str | None = None,
         input_tool: str | None = None,
+        stream: "StreamingSTT | None" = None,
     ) -> None:
+        self.stream = stream
         self._state: str = STATE_STOPPED
         self.executable_path: str = executable_path
         self.cookie_path: str | None = cookie_path
@@ -47,9 +63,15 @@ class NerdDockController:
         socket_path = os.path.join(runtime_dir, ".ydotool_socket")
         os.environ["YDOTOOL_SOCKET"] = socket_path
         daemon = shutil.which("ydotoold")
-        if not daemon or os.path.exists(socket_path):
-            logger.info("ydotoold not started (missing or socket already present).")
+        if not daemon:
+            logger.warning("ydotoold not found; typing will not work.")
             return
+        if os.path.exists(socket_path):
+            if _socket_alive(socket_path):
+                logger.info("ydotoold already running on %s", socket_path)
+                return
+            logger.info("Removing stale ydotool socket %s", socket_path)
+            os.remove(socket_path)
         try:
             self._input_daemon = subprocess.Popen(  # nosec B603
                 [daemon, f"--socket-path={socket_path}"],
@@ -62,7 +84,11 @@ class NerdDockController:
         """Terminates ydotoold if this controller started it."""
         if self._input_daemon:
             self._input_daemon.terminate()
+            self._input_daemon.wait(timeout=2)
             self._input_daemon = None
+            socket_path = os.environ.get("YDOTOOL_SOCKET")
+            if socket_path and os.path.exists(socket_path):
+                os.remove(socket_path)
 
     def get_state(self) -> str:
         """Returns the current state."""
@@ -120,6 +146,9 @@ class NerdDockController:
             logger.warning("Cannot begin dictation: current state is %s", self._state)
             return False
 
+        if self.stream:
+            return self._stream_op(self.stream.start, STATE_RECORDING)
+
         previous_state = self._state
         self._target_state = STATE_RECORDING
         self.set_state(STATE_TRANSITIONING)
@@ -167,8 +196,30 @@ class NerdDockController:
             self.set_state(previous_state)
             return False
 
+    def _stream_op(self, operation, target_state: str) -> bool:
+        """Runs a streaming-backend operation; the monitor completes the transition."""
+        previous_state = self._state
+        self._target_state = target_state
+        self.set_state(STATE_TRANSITIONING)
+        if operation():
+            return True
+        logger.error("Streaming STT: %s", self.stream.last_error or "operation failed")
+        self.set_state(previous_state)
+        return False
+
     def _execute_subcommand(self, subcommand: str, _target_state: str) -> bool:
         """Executes a short-lived sync subcommand to control the daemon."""
+        if self.stream:
+            operation = {
+                "end": self.stream.stop,
+                "cancel": self.stream.cancel,
+                "suspend": self.stream.suspend,
+                "resume": self.stream.resume,
+            }[subcommand]
+            if self._state == STATE_STOPPED:
+                return False
+            return self._stream_op(operation, _target_state)
+
         if self._state == STATE_STOPPED and subcommand in (
             "end",
             "suspend",

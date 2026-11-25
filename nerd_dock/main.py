@@ -22,6 +22,13 @@ except (ImportError, ValueError) as e:
 
 from nerd_dock.controller import NerdDockController
 from nerd_dock.monitor import NerdDictationMonitor
+from nerd_dock.stt_stream import (
+    DEFAULT_KEY_FILE,
+    DEFAULT_MODEL,
+    StreamingSTT,
+    load_api_key,
+    make_typer,
+)
 
 # Configure Logger
 logging.basicConfig(
@@ -56,6 +63,32 @@ def parse_arguments() -> argparse.Namespace:
         default="YDOTOOL",
         choices=("XDOTOOL", "DOTOOL", "DOTOOLC", "YDOTOOL", "WTYPE", "STDOUT"),
         help="nerd-dictation --simulate-input-tool (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--stt-url",
+        type=str,
+        default=os.environ.get("NERD_DOCK_STT_URL"),
+        help="Stream to an OpenAI-Realtime STT server (e.g. http://host:8000) "
+        "instead of nerd-dictation. Env: NERD_DOCK_STT_URL",
+    )
+    parser.add_argument(
+        "--stt-model",
+        type=str,
+        default=DEFAULT_MODEL,
+        help="STT model id (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--stt-key-file",
+        type=str,
+        default=DEFAULT_KEY_FILE,
+        help="File with STT_API_KEY=... (or set NERD_DOCK_STT_API_KEY); "
+        "default: %(default)s",
+    )
+    parser.add_argument(
+        "--stt-silence-ms",
+        type=int,
+        default=None,
+        help="Server VAD silence before an utterance is finalized (ms)",
     )
     parser.add_argument(
         "--poll-interval",
@@ -97,10 +130,21 @@ def main() -> int:
 
     try:
         # 2. Instantiate core components
+        stream = None
+        if args.stt_url:
+            stream = StreamingSTT(
+                url=args.stt_url,
+                api_key=load_api_key(args.stt_key_file),
+                type_text=make_typer(args.input_tool),
+                model=args.stt_model,
+                silence_ms=args.stt_silence_ms,
+            )
+            logger.info("Streaming dictation via %s", stream.url)
         controller = NerdDockController(
             executable_path=args.executable,
             cookie_path=args.cookie,
             input_tool=args.input_tool,
+            stream=stream,
         )
         controller.start_input_daemon()
         monitor = NerdDictationMonitor(

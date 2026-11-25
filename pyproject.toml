@@ -20,7 +20,7 @@ classifiers = [
 # PyGObject is intentionally not listed: it is provided by the system package
 # (python3-gobject) via --system-site-packages, and building it from PyPI needs
 # cairo/gobject-introspection/python devel headers.
-dependencies = []
+dependencies = ["websockets>=12"]
 
 [project.optional-dependencies]
 dev = [

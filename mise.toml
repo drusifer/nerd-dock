@@ -1,0 +1,9 @@
+# Project toolchain for Nerd-Dock. Run `mise install` to install pinned CLI tools.
+# Not managed by mise (OS packages, installed with `make install-system-deps`):
+#   python3-gobject, gtk3, libayatana-appindicator-gtk3, libnotify, pulseaudio-utils,
+#   ydotool. Python itself is the OS interpreter, because the venv must see the
+#   system `gi` bindings (see docs/SDLC.md, Known deviations).
+
+[tools]
+task = "3"
+gitleaks = "8"
