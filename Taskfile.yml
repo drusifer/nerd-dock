@@ -1,5 +1,5 @@
 # ==============================================================================
-# Nerd-Dock: GNOME tray indicator that controls nerd-dictation or a streaming STT server
+# Nerd-Dock: GNOME tray indicator that controls streaming dictation
 #
 # Quickstart:
 #   mise install               # pinned task + gitleaks
@@ -17,10 +17,6 @@ vars:
     sh: command -v task 2>/dev/null || command -v go-task 2>/dev/null || echo task
   VENV: venv
   PY: '{{.VENV}}/bin/python'
-  DICTATION_HOME: '{{.HOME}}/.local/share/nerd-dictation'
-  DICTATION_BIN: '{{.HOME}}/.local/bin/nerd-dictation'
-  DICTATION_MODEL_NAME: vosk-model-small-en-us-0.15
-  DICTATION_MODEL_DIR: '{{.HOME}}/.config/nerd-dictation/model'
 
 env:
   PATH: '{{.HOME}}/.local/share/mise/shims:{{.HOME}}/.local/bin:/snap/bin:{{.PATH}}'
@@ -70,30 +66,9 @@ tasks:
           echo "Installed: .githooks/pre-commit (gitleaks protect --staged) via core.hooksPath"
         fi
 
-  install-dictation:
-    desc: Install nerd-dictation, vosk and a small English model (user-level, no sudo)
-    status:
-      - test -x {{.DICTATION_BIN}}
-      - test -d {{.DICTATION_MODEL_DIR}}/am
-    cmds:
-      - git clone https://github.com/ideasman42/nerd-dictation.git {{.DICTATION_HOME}} || git -C {{.DICTATION_HOME}} pull
-      - python3 -m venv {{.DICTATION_HOME}}/venv
-      - '{{.DICTATION_HOME}}/venv/bin/pip install vosk'
-      - mkdir -p $(dirname {{.DICTATION_BIN}})
-      - |
-        printf '#!/bin/sh\nexec "%s/venv/bin/python" "%s/nerd-dictation" "$@"\n' \
-          "{{.DICTATION_HOME}}" "{{.DICTATION_HOME}}" > {{.DICTATION_BIN}}
-      - chmod +x {{.DICTATION_BIN}}
-      - mkdir -p $(dirname {{.DICTATION_MODEL_DIR}})
-      - curl -L -o {{.DICTATION_MODEL_NAME}}.zip https://alphacephei.com/vosk/models/{{.DICTATION_MODEL_NAME}}.zip
-      - unzip -q -o {{.DICTATION_MODEL_NAME}}.zip -d $(dirname {{.DICTATION_MODEL_DIR}})
-      - rm -rf {{.DICTATION_MODEL_DIR}}
-      - mv $(dirname {{.DICTATION_MODEL_DIR}})/{{.DICTATION_MODEL_NAME}} {{.DICTATION_MODEL_DIR}}
-      - rm -f {{.DICTATION_MODEL_NAME}}.zip
-
   install:
-    desc: Install Nerd-Dock with pipx (system site packages) plus nerd-dictation
-    deps: [check-system-deps, install-dictation]
+    desc: Install Nerd-Dock with pipx (system site packages)
+    deps: [check-system-deps]
     cmds:
       - task: install-hooks
       - pipx install . --system-site-packages --force
@@ -140,10 +115,10 @@ tasks:
   # --- Run & Cleanup ---
 
   run:
-    desc: Install, then run the tray app (flags via ARGS="--stt-url http://host:8000")
+    desc: Install, then run the tray app (flags via ARGS="--stt-url http://host:8001")
     deps: [install, setup]
     cmds:
-      - PYTHONPATH=. {{.PY}} nerd_dock/main.py {{.CLI_ARGS}}
+      - PYTHONPATH=. {{.PY}} -m nerd_dock.main {{.CLI_ARGS}}
 
   clean:
     desc: Remove caches and build outputs (keeps the venv)

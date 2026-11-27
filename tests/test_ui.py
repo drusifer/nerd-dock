@@ -1,222 +1,81 @@
-"""Unit tests for Nerd-Dock Ayatana AppIndicator Tray UI."""
+"""Tray indicator tests (GTK objects are mocked; gi itself must be installed)."""
 
 import unittest
 from unittest.mock import MagicMock, patch
 
-from nerd_dock.controller import (
+from nerd_dock.stt_stream import (
     STATE_RECORDING,
-    STATE_TRANSITIONING,
-    NerdDockController,
+    STATE_STOPPED,
+    STATE_STOPPING,
+    STATE_SUSPENDED,
 )
-from nerd_dock.monitor import NerdDictationMonitor
 
 
-class TestNerdDockIndicator(unittest.TestCase):
+class TestIndicator(unittest.TestCase):
     def setUp(self) -> None:
-        self.controller = NerdDockController(executable_path="/mock/bin/nerd-dictation")
-        self.monitor = MagicMock(spec=NerdDictationMonitor)
-
-        # Set up mocks for GLib, Gtk, AyatanaAppIndicator3, Notify
-        self.mock_glib = MagicMock()
-        self.mock_gtk = MagicMock()
-        self.mock_appindicator = MagicMock()
-        self.mock_notify = MagicMock()
-
-        # We want GLib.idle_add to execute the callback synchronously for testing
-        def mock_idle_add(func, *args, **kwargs):
-            return func(*args, **kwargs)
-
-        self.mock_glib.idle_add = mock_idle_add
-
-        # Mock the indicator instance returned by new_with_path
-        self.mock_indicator_instance = MagicMock()
-        self.mock_appindicator.Indicator.new_with_path.return_value = (
-            self.mock_indicator_instance
-        )
-
-        # Start the patchers for nerd_dock.ui_indicator dependencies
-        self.patchers = [
-            patch("nerd_dock.ui_indicator.GLib", self.mock_glib),
-            patch("nerd_dock.ui_indicator.Gtk", self.mock_gtk),
-            patch("nerd_dock.ui_indicator.Gio", MagicMock()),
-            patch(
-                "nerd_dock.ui_indicator.AyatanaAppIndicator3",
-                self.mock_appindicator,
-            ),
-            patch("nerd_dock.ui_indicator.Notify", self.mock_notify),
+        gtk = MagicMock()
+        gtk.MenuItem.side_effect = lambda **_kwargs: MagicMock()
+        self.notify = MagicMock()
+        patchers = [
+            patch("nerd_dock.ui_indicator.GLib"),
+            patch("nerd_dock.ui_indicator.Gtk", gtk),
+            patch("nerd_dock.ui_indicator.Gio"),
+            patch("nerd_dock.ui_indicator.AyatanaAppIndicator3"),
+            patch("nerd_dock.ui_indicator.Notify", self.notify),
             patch("nerd_dock.ui_indicator.HAS_NOTIFY", True),
         ]
-        for p in self.patchers:
+        for p in patchers:
             p.start()
+            self.addCleanup(p.stop)
 
-        # Import the class under test
         from nerd_dock.ui_indicator import NerdDockIndicator
 
-        self.indicator = NerdDockIndicator(
-            controller=self.controller,
-            monitor=self.monitor,
-        )
+        self.stream = MagicMock(state=STATE_STOPPED, last_error=None)
+        self.indicator = NerdDockIndicator(self.stream)
 
-    def tearDown(self) -> None:
-        for p in self.patchers:
-            p.stop()
+    def _show(self, state: str) -> None:
+        self.stream.state = state
+        self.assertTrue(self.indicator.refresh())
 
-    def test_init(self) -> None:
-        # Verify that the elements are correctly initialized
-        self.mock_appindicator.Indicator.new_with_path.assert_called_once()
-        self.assertEqual(self.indicator._current_ui_state, "STOPPED")
-
-    def test_state_change_callback_updates_ui(self) -> None:
-        # Trigger state changed callback
-        self.indicator._on_state_changed(STATE_RECORDING)
-
-        # Verify that the UI state tracks it
-        self.assertEqual(self.indicator._current_ui_state, STATE_RECORDING)
-        self.assertEqual(self.controller.get_state(), STATE_RECORDING)
-
-    def test_ui_sensitivity_during_transition(self) -> None:
-        self.indicator.update_ui(STATE_TRANSITIONING)
-
-        # Verify all options disabled
+    def test_menu_follows_state(self) -> None:
+        self._show(STATE_RECORDING)
+        self.indicator.menu_pause.set_sensitive.assert_called_with(True)
         self.indicator.menu_start.set_sensitive.assert_called_with(False)
-        self.indicator.menu_pause.set_sensitive.assert_called_with(False)
+        self.indicator.menu_status.set_label.assert_called_with("Status: Listening")
+        self._show(STATE_STOPPING)
+        self.indicator.menu_stop.set_sensitive.assert_called_with(False)
 
-    def test_ui_transition_labels(self) -> None:
-        # 1. Starting Up (STOPPED -> RECORDING)
-        self.controller._previous_stable_state = "STOPPED"
-        self.controller._target_state = "RECORDING"
-        self.indicator.update_ui(STATE_TRANSITIONING)
-        self.mock_indicator_instance.set_icon_full.assert_called_with(
-            "nerd-dock-paused", "Dictation: Starting Up..."
-        )
-        self.indicator.menu_status.set_label.assert_called_with(
-            "Status: Starting Up (Loading Model)..."
-        )
+    def test_stop_with_error_notifies_it(self) -> None:
+        self._show(STATE_RECORDING)
+        self.stream.last_error = "key rejected"
+        self._show(STATE_STOPPED)
+        self.assertEqual(self.notify.Notification.new.call_args[0][1], "key rejected")
 
-        # 2. Stopping (RECORDING -> STOPPED)
-        self.controller._previous_stable_state = "RECORDING"
-        self.controller._target_state = "STOPPED"
-        self.indicator.update_ui(STATE_TRANSITIONING)
-        self.mock_indicator_instance.set_icon_full.assert_called_with(
-            "nerd-dock-stopped", "Dictation: Stopping..."
-        )
-        self.indicator.menu_status.set_label.assert_called_with("Status: Stopping...")
+    def test_toggle_starts_pauses_and_resumes_but_never_stops(self) -> None:
+        states = (STATE_STOPPED, STATE_RECORDING, STATE_SUSPENDED, STATE_STOPPING)
+        for state in states:
+            self.stream.state = state
+            self.indicator.toggle_dictation()
+        self.stream.start.assert_called_once()
+        self.stream.suspend.assert_called_once()
+        self.stream.resume.assert_called_once()
+        self.stream.stop.assert_not_called()
 
-    def test_shutdown_cancels_active_dictation(self) -> None:
-        # Set state to recording
-        self.controller.set_state(STATE_RECORDING)
-        self.indicator._current_ui_state = STATE_RECORDING
+    def test_failed_start_shows_the_reason(self) -> None:
+        self.stream.start.return_value = False
+        self.stream.last_error = "no microphone"
+        self.indicator.toggle_dictation()
+        self.assertEqual(self.notify.Notification.new.call_args[0][1], "no microphone")
 
-        # Call shutdown
-        with patch.object(self.controller, "cancel_dictation") as mock_cancel:
-            self.indicator.shutdown()
-            mock_cancel.assert_called_once()
+    def test_shutdown_releases_the_microphone(self) -> None:
+        self.indicator.shutdown()
+        self.stream.cancel.assert_called_once()
 
-    def test_on_start_clicked_success(self) -> None:
-        with patch.object(
-            self.controller,
-            "begin_dictation",
-            return_value=True,
-        ) as mock_begin:
-            self.controller._target_state = "RECORDING"
-            self.indicator._on_start_clicked(None)
-            mock_begin.assert_called_once()
-            self.assertEqual(self.indicator._current_ui_state, STATE_TRANSITIONING)
-            self.indicator.menu_status.set_label.assert_called_with(
-                "Status: Starting Up (Loading Model)..."
-            )
-
-    def test_toggle_dictation_routes_by_state(self) -> None:
-        with (
-            patch.object(self.indicator, "_on_start_clicked") as start,
-            patch.object(self.indicator, "_on_pause_clicked") as pause,
-            patch.object(self.indicator, "_on_resume_clicked") as resume,
-            patch.object(self.indicator, "_on_stop_clicked") as stop,
-        ):
-            for state in ("STOPPED", "RECORDING", "SUSPENDED", STATE_TRANSITIONING):
-                self.controller.set_state(state)
-                self.indicator.toggle_dictation()
-            start.assert_called_once()
-            pause.assert_called_once()
-            resume.assert_called_once()
-            stop.assert_not_called()
-
-    def test_enable_remote_toggle_registers_action(self) -> None:
+    def test_remote_toggle_registers_action(self) -> None:
         self.indicator.enable_remote_toggle()
         self.indicator._gio_app.add_action.assert_called_once()
         self.indicator._gio_app.register.assert_called_once()
 
-    def test_on_start_clicked_failure(self) -> None:
-        with patch.object(
-            self.controller,
-            "begin_dictation",
-            return_value=False,
-        ) as mock_begin:
-            self.indicator._on_start_clicked(None)
-            mock_begin.assert_called_once()
-            self.assertEqual(self.indicator._current_ui_state, "STOPPED")
 
-    def test_on_pause_clicked(self) -> None:
-        self.controller.set_state("RECORDING")
-        self.indicator._current_ui_state = "RECORDING"
-        with patch.object(
-            self.controller,
-            "suspend_dictation",
-            return_value=True,
-        ) as mock_suspend:
-            self.controller._target_state = "SUSPENDED"
-            self.indicator._on_pause_clicked(None)
-            mock_suspend.assert_called_once()
-            self.assertEqual(self.indicator._current_ui_state, STATE_TRANSITIONING)
-            self.indicator.menu_status.set_label.assert_called_with(
-                "Status: Pausing..."
-            )
-
-    def test_on_resume_clicked(self) -> None:
-        self.controller.set_state("SUSPENDED")
-        self.indicator._current_ui_state = "SUSPENDED"
-        with patch.object(
-            self.controller,
-            "resume_dictation",
-            return_value=True,
-        ) as mock_resume:
-            self.controller._target_state = "RECORDING"
-            self.controller._previous_stable_state = "SUSPENDED"
-            self.indicator._on_resume_clicked(None)
-            mock_resume.assert_called_once()
-            self.assertEqual(self.indicator._current_ui_state, STATE_TRANSITIONING)
-            self.indicator.menu_status.set_label.assert_called_with(
-                "Status: Resuming..."
-            )
-
-    def test_on_stop_clicked(self) -> None:
-        self.controller.set_state("RECORDING")
-        self.indicator._current_ui_state = "RECORDING"
-        with patch.object(
-            self.controller,
-            "end_dictation",
-            return_value=True,
-        ) as mock_end:
-            self.controller._target_state = "STOPPED"
-            self.indicator._on_stop_clicked(None)
-            mock_end.assert_called_once()
-            self.assertEqual(self.indicator._current_ui_state, STATE_TRANSITIONING)
-            self.indicator.menu_status.set_label.assert_called_with(
-                "Status: Stopping..."
-            )
-
-    def test_on_cancel_clicked(self) -> None:
-        self.controller.set_state("RECORDING")
-        self.indicator._current_ui_state = "RECORDING"
-        with patch.object(
-            self.controller,
-            "cancel_dictation",
-            return_value=True,
-        ) as mock_cancel:
-            self.controller._target_state = "STOPPED"
-            self.indicator._on_cancel_clicked(None)
-            mock_cancel.assert_called_once()
-            self.assertEqual(self.indicator._current_ui_state, STATE_TRANSITIONING)
-            self.indicator.menu_status.set_label.assert_called_with(
-                "Status: Stopping..."
-            )
+if __name__ == "__main__":
+    unittest.main()

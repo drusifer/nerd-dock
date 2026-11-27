@@ -35,14 +35,13 @@ Prerequisites not installed by `make setup`: the OS packages above and `mise` it
 ## 3. Make targets
 
 The Makefile is a forwarding shim to `Taskfile.yml`; agents run `bobp make <target>`.
-`ARGS="..."` is passed through (`make run ARGS="--stt-url http://host:8000"`).
+`ARGS="..."` is passed through (`make run ARGS="--stt-url http://host:8001"`).
 
 | Target | Runs | Notes |
 |---|---|---|
 | `install-system-deps` | `sudo dnf install ...` | In the Makefile, not Task: must work before `task` exists. Only target using sudo |
 | `setup` | venv + `pip install -e .[dev]` | checksum-cached on `pyproject.toml` |
-| `install` | `pipx install . --system-site-packages --force`, plus hooks and nerd-dictation | fails fast if `gi` / AppIndicator are missing |
-| `install-dictation` | clones nerd-dictation, vosk, small English model | user-level, no sudo, skipped if present |
+| `install` | `pipx install . --system-site-packages --force`, plus hooks | fails fast if `gi` / AppIndicator are missing |
 | `install-hooks` | sets `core.hooksPath` to `.githooks` | gitleaks pre-commit |
 | `run` | `install` + `setup`, then `nerd_dock/main.py $ARGS` | |
 | `test` | pytest with coverage | `ARGS` passes through |

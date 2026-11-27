@@ -1,120 +1,58 @@
-import json
-import sys
-import threading
-import time
-import unittest
-from unittest.mock import MagicMock
+"""Streaming client and headless CLI against a fake server (no gi)."""
 
+import os
+import tempfile
+import threading
+import unittest
+from unittest.mock import patch
+
+import msgpack
 from websockets.sync.server import serve
 
-from nerd_dock.controller import (
-    STATE_RECORDING,
-    STATE_STOPPED,
-    STATE_TRANSITIONING,
-    NerdDockController,
-)
+from nerd_dock import stream_cli
 from nerd_dock.stt_stream import (
+    FRAME_SAMPLES,
+    STATE_STOPPED,
+    STATE_STOPPING,
     STATE_SUSPENDED,
     StreamingSTT,
-    keep_transcript,
+    asr_url,
+    audio_message,
     load_api_key,
-    realtime_url,
-    session_update,
+    pcm16_to_floats,
 )
-
-TRANSCRIBED = "conversation.item.input_audio_transcription.completed"
-
-# Endless 100 ms chunks of silence, paced like a microphone.
-FAKE_MIC = [
-    sys.executable,
-    "-c",
-    "import sys,time\n"
-    "while True:\n"
-    " sys.stdout.buffer.write(bytes(4800)); sys.stdout.buffer.flush(); "
-    "time.sleep(0.1)",
-]
-
-
-class FakeServer:
-    """Minimal Realtime server: answers 3 audio chunks with a transcript."""
-
-    def __init__(self, transcripts=("hello world", "Thanks.")) -> None:
-        self.messages: list[dict] = []
-        self.auth: str | None = None
-        self._transcripts = list(transcripts)
-        self._server = serve(self._handle, "127.0.0.1", 0)
-        self.port = self._server.socket.getsockname()[1]
-        threading.Thread(target=self._server.serve_forever, daemon=True).start()
-
-    def _handle(self, ws) -> None:
-        self.auth = ws.request.headers.get("Authorization")
-        appends = 0
-        for raw in ws:
-            msg = json.loads(raw)
-            self.messages.append(msg)
-            if msg["type"] == "input_audio_buffer.append":
-                appends += 1
-                if appends % 3 == 0 and self._transcripts:
-                    ws.send(
-                        json.dumps(
-                            {
-                                "type": TRANSCRIBED,
-                                "transcript": self._transcripts.pop(0),
-                            }
-                        )
-                    )
-
-    def close(self) -> None:
-        self._server.shutdown()
-
-
-def wait_for(cond, timeout=5.0) -> bool:
-    end = time.time() + timeout
-    while time.time() < end:
-        if cond():
-            return True
-        time.sleep(0.02)
-    return False
+from tests.fakes import FAKE_MIC, FakeKyutai, wait_for
 
 
 class TestHelpers(unittest.TestCase):
-    def test_realtime_url(self) -> None:
+    def test_url(self) -> None:
+        self.assertEqual(asr_url("http://h:8001"), "ws://h:8001/api/asr-streaming")
         self.assertEqual(
-            realtime_url("http://h:8000", "a/b"),
-            "ws://h:8000/v1/realtime?intent=transcription&model=a%2Fb",
-        )
-        self.assertEqual(
-            realtime_url("https://h/v1", "m"),
-            "wss://h/v1/realtime?intent=transcription&model=m",
+            asr_url("wss://h/api/asr-streaming/"), "wss://h/api/asr-streaming"
         )
 
-    def test_session_update(self) -> None:
-        vad = session_update("m", 400)["session"]["audio"]["input"]["turn_detection"]
-        self.assertEqual(vad, {"type": "server_vad", "silence_duration_ms": 400})
+    def test_pcm16_to_floats(self) -> None:
+        self.assertEqual(
+            pcm16_to_floats(b"\x00\x00\x00\x40\x00\x80\x01"), [0.0, 0.5, -1.0]
+        )
 
-    def test_junk_filter(self) -> None:
-        self.assertFalse(keep_transcript("  Thanks. "))
-        self.assertTrue(keep_transcript("Thanks for the update."))
+    def test_audio_message_is_float32_msgpack(self) -> None:
+        packed = audio_message([0.25] * FRAME_SAMPLES)
+        self.assertEqual(packed.count(b"\xca"), FRAME_SAMPLES)
+        self.assertEqual(msgpack.unpackb(packed)["pcm"][0], 0.25)
 
-    def test_load_api_key(self) -> None:
-        import os
-        import tempfile
-
-        with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as f:
-            f.write("OTHER=1\nSTT_API_KEY='secret'\n")
-        old = {k: os.environ.pop(k, None) for k in ("STT_API_KEY",)}
-        try:
-            self.assertEqual(load_api_key(f.name), "secret")
-        finally:
-            os.unlink(f.name)
-            for k, v in old.items():
-                if v is not None:
-                    os.environ[k] = v
+    def test_api_key_from_file(self) -> None:
+        with tempfile.NamedTemporaryFile("w", delete=False) as f:
+            f.write("export STT_API_KEY='abc'\n")
+        self.addCleanup(os.remove, f.name)
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(load_api_key(f.name), "abc")
+            self.assertIsNone(load_api_key("/nonexistent"))
 
 
-class TestStreaming(unittest.TestCase):
+class TestStream(unittest.TestCase):
     def setUp(self) -> None:
-        self.server = FakeServer()
+        self.server = FakeKyutai()
         self.typed: list[str] = []
         self.stt = StreamingSTT(
             f"http://127.0.0.1:{self.server.port}",
@@ -128,42 +66,48 @@ class TestStreaming(unittest.TestCase):
         wait_for(lambda: self.stt.state == STATE_STOPPED)
         self.server.close()
 
-    def test_stream_types_transcript_and_filters_junk(self) -> None:
+    def test_words_typed_as_they_arrive(self) -> None:
         self.assertTrue(self.stt.start())
-        self.assertTrue(wait_for(lambda: self.typed))
-        self.assertEqual(self.typed, ["hello world "])
-        self.assertEqual(self.server.auth, "Bearer key123")
-        self.assertEqual(self.server.messages[0]["type"], "session.update")
-        wait_for(lambda: len(self.server.messages) > 6)
-        self.assertEqual(self.typed, ["hello world "])  # "Thanks." dropped
+        self.assertTrue(wait_for(lambda: len(self.typed) == 2))
+        self.assertEqual(self.typed, ["Hello, ", "world. "])
+        self.assertEqual(self.server.key, "key123")
+        self.assertEqual(len(self.server.audio[0]), FRAME_SAMPLES)
+        self.assertAlmostEqual(self.server.audio[0][0], 4096 / 32768)
 
-    def test_suspend_stops_audio_and_resume_restarts(self) -> None:
+    def test_pause_sends_silence_and_resume_sends_mic(self) -> None:
         self.stt.start()
-        wait_for(lambda: len(self.server.messages) > 3)
+        wait_for(lambda: len(self.server.audio) > 2)
         self.assertTrue(self.stt.suspend())
         self.assertEqual(self.stt.state, STATE_SUSPENDED)
-        time.sleep(0.4)
-        count = len(self.server.messages)
-        time.sleep(0.5)
-        self.assertEqual(len(self.server.messages), count)
+        n = len(self.server.audio)
+        self.assertTrue(wait_for(lambda: len(self.server.audio) > n + 3))
+        self.assertFalse(any(self.server.audio[-1]))  # silence keeps the model clocked
         self.assertTrue(self.stt.resume())
-        self.assertTrue(wait_for(lambda: len(self.server.messages) > count + 2))
+        n = len(self.server.audio)
+        self.assertTrue(wait_for(lambda: len(self.server.audio) > n + 2))
+        self.assertTrue(any(self.server.audio[-1]))
 
-    def test_stop_commits_and_reports_stopped(self) -> None:
+    def test_stop_flushes_with_marker(self) -> None:
         self.stt.start()
-        wait_for(lambda: len(self.server.messages) > 3)
+        wait_for(lambda: len(self.server.audio) > 2)
         self.assertTrue(self.stt.stop())
+        self.assertEqual(self.stt.state, STATE_STOPPING)
+        self.assertFalse(self.stt.start())  # not until the flush is done
+        self.assertTrue(wait_for(lambda: self.stt.state == STATE_STOPPED, timeout=3))
+        self.assertEqual(self.server.markers, 1)
+
+    def test_cancel_skips_flush(self) -> None:
+        self.stt.start()
+        wait_for(lambda: len(self.server.audio) > 2)
+        self.assertTrue(self.stt.cancel())
         self.assertTrue(wait_for(lambda: self.stt.state == STATE_STOPPED))
-        types = [m["type"] for m in self.server.messages]
-        self.assertIn("input_audio_buffer.commit", types)
+        self.assertEqual(self.server.markers, 0)
 
     def test_wrong_key_stops_without_retry(self) -> None:
-        from websockets.sync.server import serve as s
-
         def reject(connection, _request):
-            return connection.respond(403, "Not authenticated\n")
+            return connection.respond(403, "Unauthorized\n")
 
-        srv = s(lambda ws: None, "127.0.0.1", 0, process_request=reject)
+        srv = serve(lambda ws: None, "127.0.0.1", 0, process_request=reject)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         stt = StreamingSTT(
             f"http://127.0.0.1:{srv.socket.getsockname()[1]}",
@@ -176,58 +120,27 @@ class TestStreaming(unittest.TestCase):
         self.assertIn("rejected the API key", stt.last_error)
         srv.shutdown()
 
-    def test_start_fails_without_capture_tool(self) -> None:
+
+class TestCli(unittest.TestCase):
+    def test_missing_url_is_usage_error(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(stream_cli.main(["--key-file", "/nonexistent"]), 2)
+
+    def test_run_prints_words_and_stops_cleanly(self) -> None:
+        server = FakeKyutai()
+        typed: list[str] = []
         stt = StreamingSTT(
-            "http://x", None, self.typed.append, capture_cmd=["/nonexistent/mic"]
+            f"http://127.0.0.1:{server.port}", "k", typed.append, capture_cmd=FAKE_MIC
         )
-        self.assertFalse(stt.start())
-        self.assertIn("Cannot start microphone", stt.last_error)
+        threading.Timer(1.0, stt.stop).start()
+        self.assertEqual(stream_cli.run(stt, poll=0.02), 0)
+        self.assertEqual(typed, ["Hello, ", "world. "])
+        server.close()
 
-
-class TestControllerStreaming(unittest.TestCase):
-    def test_controller_delegates_to_stream(self) -> None:
-        stream = MagicMock()
-        stream.start.return_value = True
-        stream.stop.return_value = True
-        c = NerdDockController(stream=stream)
-        self.assertTrue(c.begin_dictation())
-        self.assertEqual(c.get_state(), STATE_TRANSITIONING)
-        c.set_state(STATE_RECORDING)
-        self.assertTrue(c.end_dictation())
-        stream.stop.assert_called_once()
-
-    def test_failed_start_restores_state(self) -> None:
-        stream = MagicMock()
-        stream.start.return_value = False
-        c = NerdDockController(stream=stream)
-        self.assertFalse(c.begin_dictation())
-        self.assertEqual(c.get_state(), STATE_STOPPED)
+    def test_run_fails_when_capture_missing(self) -> None:
+        stt = StreamingSTT("http://x", None, print, capture_cmd=["/nonexistent/mic"])
+        self.assertEqual(stream_cli.run(stt), 1)
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class TestInputDaemon(unittest.TestCase):
-    def test_stale_socket_is_replaced_and_daemon_started(self) -> None:
-        import os
-        import socket
-        import tempfile
-        from unittest.mock import patch
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, ".ydotool_socket")
-            with socket.socket(socket.AF_UNIX) as s:  # bind, then die: stale file
-                s.bind(path)
-            self.assertTrue(os.path.exists(path))
-            c = NerdDockController(input_tool="YDOTOOL")
-            with (
-                patch.dict(os.environ, {"XDG_RUNTIME_DIR": tmp}),
-                patch("shutil.which", return_value="/usr/bin/ydotoold"),
-                patch("subprocess.Popen") as popen,
-            ):
-                c.start_input_daemon()
-            self.assertFalse(os.path.exists(path))
-            popen.assert_called_once_with(
-                ["/usr/bin/ydotoold", f"--socket-path={path}"]
-            )

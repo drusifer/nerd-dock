@@ -15,7 +15,7 @@ all: help
 # that uses sudo: OS packages cannot come from mise (see docs/SDLC.md).
 install-system-deps: ## Install Fedora system packages via dnf (requires sudo)
 	sudo dnf install -y python3-gobject gtk3 libayatana-appindicator-gtk3 \
-		libnotify pulseaudio-utils ydotool git curl unzip
+		libnotify pulseaudio-utils ydotool git
 
 help: _check-task
 	@$(TASK) --list

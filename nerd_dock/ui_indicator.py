@@ -17,42 +17,42 @@ except (ValueError, ImportError):
 
 from gi.repository import AyatanaAppIndicator3, Gio, GLib, Gtk
 
-from nerd_dock.controller import (
+from nerd_dock.stt_stream import (
     STATE_RECORDING,
     STATE_STOPPED,
+    STATE_STOPPING,
     STATE_SUSPENDED,
-    STATE_TRANSITIONING,
-    NerdDockController,
+    StreamingSTT,
 )
-from nerd_dock.monitor import NerdDictationMonitor
 
 logger = logging.getLogger("nerd_dock.ui_indicator")
 
 # D-Bus application id; the GNOME shortcut command targets this name.
 APP_ID = "io.github.drusifer.NerdDock"
+ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "resources", "icons"
+)
+POLL_MS = 250
 
-# Locate resources directory
-RESOURCES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")
-ICONS_DIR = os.path.join(RESOURCES_DIR, "icons")
+# state -> (icon, label, notification)
+STATES = {
+    STATE_STOPPED: ("nerd-dock-stopped", "Stopped", "Dictation stopped."),
+    STATE_RECORDING: ("nerd-dock-recording", "Listening", "Listening..."),
+    STATE_SUSPENDED: ("nerd-dock-paused", "Paused", "Dictation paused."),
+    STATE_STOPPING: ("nerd-dock-stopped", "Stopping...", None),
+}
 
 
 class NerdDockIndicator:
-    """System tray indicator (Ayatana AppIndicator) for nerd-dictation."""
+    """Tray icon and menu for one streaming dictation session."""
 
-    def __init__(
-        self,
-        controller: NerdDockController,
-        monitor: NerdDictationMonitor,
-    ) -> None:
-        self.controller: NerdDockController = controller
-        self.monitor: NerdDictationMonitor = monitor
+    def __init__(self, stream: StreamingSTT) -> None:
+        self.stream = stream
+        self._shown: str | None = None
 
-        logger.info("Initializing Ayatana AppIndicator with icon path: %s", ICONS_DIR)
+        if HAS_NOTIFY:
+            Notify.init("Nerd-Dock")
 
-        # 1. Initialize Desktop Notifications
-        self._init_notifications()
-
-        # 2. Create the Ayatana AppIndicator
         self.indicator = AyatanaAppIndicator3.Indicator.new_with_path(
             "nerd-dock",
             "nerd-dock-stopped",
@@ -60,178 +60,73 @@ class NerdDockIndicator:
             ICONS_DIR,
         )
         self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.ACTIVE)
-        self.indicator.set_title("Nerd-Dictation Controller")
 
-        # 3. Create the GTK context menu
         self.menu = Gtk.Menu()
         self._build_menu()
         self.indicator.set_menu(self.menu)
+        self.refresh()
+        # Follow changes the stream makes itself (stop finished, key rejected).
+        GLib.timeout_add(POLL_MS, self.refresh)
 
-        # 4. Bind monitor state callback
-        self.monitor._callback = self._on_state_changed
-
-        # 5. Apply the initial state to the UI
-        self._current_ui_state = self.controller.get_state()
-        self.update_ui(self._current_ui_state)
-
-    def _init_notifications(self) -> None:
-        """Initializes libnotify for system desktop notifications."""
-        global HAS_NOTIFY
-        if HAS_NOTIFY:
-            try:
-                Notify.init("Nerd-Dock")
-                logger.info("Desktop notifications initialized.")
-            except Exception as e:
-                HAS_NOTIFY = False
-                logger.warning("Failed to initialize desktop notifications: %s", e)
-
-    def _send_notification(self, title: str, message: str) -> None:
-        """Sends a desktop notification to the user."""
-        if HAS_NOTIFY:
-            try:
-                n = Notify.Notification.new(title, message, "audio-input-microphone")
-                n.show()
-            except Exception as e:
-                logger.warning("Failed to show desktop notification: %s", e)
+    def _item(self, label: str, action=None) -> "Gtk.MenuItem":
+        item = Gtk.MenuItem(label=label)
+        if action:
+            item.connect("activate", lambda _widget: self._act(action))
+        self.menu.append(item)
+        return item
 
     def _build_menu(self) -> None:
-        """Builds all menu items for the tray context menu."""
-        # Status indicator item (grayed out header)
-        self.menu_status = Gtk.MenuItem(label="Status: Stopped")
+        self.menu_status = self._item("Status: Stopped")
         self.menu_status.set_sensitive(False)
-        self.menu.append(self.menu_status)
-
-        # Separator
         self.menu.append(Gtk.SeparatorMenuItem())
-
-        # Menu option: Start
-        self.menu_start = Gtk.MenuItem(label="Start Dictation")
-        self.menu_start.connect("activate", self._on_start_clicked)
-        self.menu.append(self.menu_start)
-
-        # Menu option: Pause
-        self.menu_pause = Gtk.MenuItem(label="Pause Dictation")
-        self.menu_pause.connect("activate", self._on_pause_clicked)
-        self.menu.append(self.menu_pause)
-
-        # Menu option: Resume
-        self.menu_resume = Gtk.MenuItem(label="Resume Dictation")
-        self.menu_resume.connect("activate", self._on_resume_clicked)
-        self.menu.append(self.menu_resume)
-
-        # Menu option: Stop
-        self.menu_stop = Gtk.MenuItem(label="Stop Dictation")
-        self.menu_stop.connect("activate", self._on_stop_clicked)
-        self.menu.append(self.menu_stop)
-
-        # Menu option: Cancel
-        self.menu_cancel = Gtk.MenuItem(label="Cancel Dictation")
-        self.menu_cancel.connect("activate", self._on_cancel_clicked)
-        self.menu.append(self.menu_cancel)
-
-        # Separator
-        separator = Gtk.SeparatorMenuItem()
-        self.menu.append(separator)
-
-        # Menu option: Quit
-        menu_quit = Gtk.MenuItem(label="Quit")
-        menu_quit.connect("activate", self._on_quit_clicked)
-        self.menu.append(menu_quit)
-
-        # Show all menu items
+        self.menu_start = self._item("Start Dictation", self.stream.start)
+        self.menu_pause = self._item("Pause Dictation", self.stream.suspend)
+        self.menu_resume = self._item("Resume Dictation", self.stream.resume)
+        self.menu_stop = self._item("Stop Dictation", self.stream.stop)
+        self.menu_cancel = self._item("Cancel Dictation", self.stream.cancel)
+        self.menu.append(Gtk.SeparatorMenuItem())
+        quit_item = Gtk.MenuItem(label="Quit")
+        quit_item.connect("activate", self._on_quit_clicked)
+        self.menu.append(quit_item)
         self.menu.show_all()
 
-    def update_ui(self, state: str) -> None:
-        """Updates the tray icon, tooltip, and menu item sensitivity based on state."""
-        logger.debug("Updating UI state representation to: %s", state)
-        self._current_ui_state = state
-
-        # Map state to specific custom icon
-        if state == STATE_RECORDING:
-            icon_name = "nerd-dock-recording"
-            label = "Dictation: Listening"
-        elif state == STATE_SUSPENDED:
-            icon_name = "nerd-dock-paused"
-            label = "Dictation: Paused"
-        elif state == STATE_TRANSITIONING:
-            icon_name = "nerd-dock-stopped"  # fallback for brief transitional state
-            target = self.controller.get_target_state()
-            if target == STATE_RECORDING:
-                icon_name = "nerd-dock-paused"  # amber: loading, not listening yet
-            prev = getattr(self.controller, "_previous_stable_state", STATE_STOPPED)
-            if target == STATE_RECORDING and prev == STATE_STOPPED:
-                label = "Dictation: Starting Up..."
-            elif target == STATE_RECORDING and prev == STATE_SUSPENDED:
-                label = "Dictation: Resuming..."
-            elif target == STATE_SUSPENDED:
-                label = "Dictation: Pausing..."
-            elif target == STATE_STOPPED:
-                label = "Dictation: Stopping..."
-            else:
-                label = "Dictation: Working..."
-        else:
-            icon_name = "nerd-dock-stopped"
-            label = "Dictation: Stopped"
-
-        # Update AppIndicator icon and label
-        self.indicator.set_icon_full(icon_name, label)
-        # Note: AppIndicator doesn't have a direct set_tooltip method,
-        # but set_title is used by tray implementations as accessibility/tooltip.
-        self.indicator.set_title(label)
-
-        # Update Menu Status label
-        if hasattr(self, "menu_status"):
-            status_text = label.replace("Dictation: ", "Status: ")
-            if "Starting Up" in status_text:
-                status_text = "Status: Starting Up (Loading Model)..."
-            self.menu_status.set_label(status_text)
-
-        # Update Menu sensitivities
-        is_stopped = state == STATE_STOPPED
-        is_recording = state == STATE_RECORDING
-        is_suspended = state == STATE_SUSPENDED
-        is_transitioning = state == STATE_TRANSITIONING
-
-        if is_transitioning:
-            # Disable actions during transition
-            self.menu_start.set_sensitive(False)
-            self.menu_pause.set_sensitive(False)
-            self.menu_resume.set_sensitive(False)
-            self.menu_stop.set_sensitive(False)
-            self.menu_cancel.set_sensitive(False)
-        else:
-            self.menu_start.set_sensitive(is_stopped)
-            self.menu_pause.set_sensitive(is_recording)
-            self.menu_resume.set_sensitive(is_suspended)
-            self.menu_stop.set_sensitive(is_recording or is_suspended)
-            self.menu_cancel.set_sensitive(is_recording or is_suspended)
-
-    def _on_state_changed(self, state: str) -> None:
-        """Callback triggered by process monitor when state changes.
-
-        Run on main thread.
-        """
-        GLib.idle_add(self._handle_state_changed_on_main, state)
-
-    def _handle_state_changed_on_main(self, state: str) -> None:
-        """Performs UI update and system notification safely on the GLib main thread."""
-        old_ui_state = getattr(self, "_current_ui_state", None)
-        if old_ui_state == state:
+    def _notify(self, message: str) -> None:
+        if not HAS_NOTIFY:
             return
+        try:
+            Notify.Notification.new(
+                "Nerd-Dock", message, "audio-input-microphone"
+            ).show()
+        except Exception as e:
+            logger.warning("Failed to show desktop notification: %s", e)
 
-        self.controller.set_state(state)
-        self.update_ui(state)
+    def _act(self, action) -> None:
+        """Runs a stream operation and shows the result."""
+        if not action() and self.stream.last_error:
+            self._notify(self.stream.last_error)
+        self.refresh()
 
-        # Notify user on meaningful state changes
-        if state == STATE_RECORDING:
-            self._send_notification(
-                "Nerd Dictation",
-                "Microphone Active — Listening...",
-            )
-        elif state == STATE_SUSPENDED:
-            self._send_notification("Nerd Dictation", "Dictation Suspended / Muted.")
-        elif state == STATE_STOPPED and old_ui_state != STATE_TRANSITIONING:
-            self._send_notification("Nerd Dictation", "Dictation Stopped.")
+    def refresh(self) -> bool:
+        """Brings the icon and menu in line with the stream. True keeps the timer."""
+        state = self.stream.state
+        if state == self._shown:
+            return True
+        previous, self._shown = self._shown, state
+        icon, label, message = STATES[state]
+        self.indicator.set_icon_full(icon, f"Dictation: {label}")
+        self.indicator.set_title(f"Dictation: {label}")
+        self.menu_status.set_label(f"Status: {label}")
+        self.menu_start.set_sensitive(state == STATE_STOPPED)
+        self.menu_pause.set_sensitive(state == STATE_RECORDING)
+        self.menu_resume.set_sensitive(state == STATE_SUSPENDED)
+        live = state in (STATE_RECORDING, STATE_SUSPENDED)
+        self.menu_stop.set_sensitive(live)
+        self.menu_cancel.set_sensitive(live)
+        if previous is not None and message:
+            if state == STATE_STOPPED and self.stream.last_error:
+                message = self.stream.last_error
+            self._notify(message)
+        return True
 
     def enable_remote_toggle(self) -> None:
         """Exposes a `toggle` action on the session bus for a GNOME shortcut.
@@ -247,84 +142,23 @@ class NerdDockIndicator:
         logger.info("Toggle action available on D-Bus as %s", APP_ID)
 
     def toggle_dictation(self) -> None:
-        """Starts when stopped, then flips between recording and paused.
-
-        Pausing keeps a streaming connection open; stop is in the menu.
-        """
-        state = self.controller.get_state()
-        if state == STATE_STOPPED:
-            self._on_start_clicked(None)
-        elif state == STATE_RECORDING:
-            self._on_pause_clicked(None)
-        elif state == STATE_SUSPENDED:
-            self._on_resume_clicked(None)
+        """Starts when stopped, then flips between recording and paused."""
+        action = {
+            STATE_STOPPED: self.stream.start,
+            STATE_RECORDING: self.stream.suspend,
+            STATE_SUSPENDED: self.stream.resume,
+        }.get(self.stream.state)
+        if action:
+            self._act(action)
         else:
-            logger.info("Ignoring toggle while %s", state)
+            logger.info("Ignoring toggle while %s", self.stream.state)
 
-    # Menu Action Handlers
-
-    def _on_start_clicked(self, _widget: Gtk.MenuItem) -> None:
-        logger.info("User clicked: Start Dictation")
-        # Attempt to launch the subprocess asynchronously
-        if self.controller.begin_dictation():
-            self.update_ui(STATE_TRANSITIONING)
-            self._send_notification(
-                "Nerd Dictation",
-                "Starting up (Loading model)...",
-            )
-        else:
-            self.update_ui(self.controller.get_state())
-
-    def _on_pause_clicked(self, _widget: Gtk.MenuItem) -> None:
-        logger.info("User clicked: Pause Dictation")
-        if self.controller.suspend_dictation():
-            self.update_ui(STATE_TRANSITIONING)
-        else:
-            self.update_ui(self.controller.get_state())
-
-    def _on_resume_clicked(self, _widget: Gtk.MenuItem) -> None:
-        logger.info("User clicked: Resume Dictation")
-        if self.controller.resume_dictation():
-            self.update_ui(STATE_TRANSITIONING)
-        else:
-            self.update_ui(self.controller.get_state())
-
-    def _on_stop_clicked(self, _widget: Gtk.MenuItem) -> None:
-        logger.info("User clicked: Stop Dictation")
-        if self.controller.end_dictation():
-            self.update_ui(STATE_TRANSITIONING)
-        else:
-            self.update_ui(self.controller.get_state())
-
-    def _on_cancel_clicked(self, _widget: Gtk.MenuItem) -> None:
-        logger.info("User clicked: Cancel Dictation")
-        if self.controller.cancel_dictation():
-            self.update_ui(STATE_TRANSITIONING)
-        else:
-            self.update_ui(self.controller.get_state())
-
-    def _on_quit_clicked(self, _widget: Gtk.MenuItem) -> None:
-        logger.info("User clicked: Quit Application")
+    def _on_quit_clicked(self, _widget) -> None:
         self.shutdown()
         Gtk.main_quit()
 
     def shutdown(self) -> None:
-        """Cleans up the background monitors, notifications, and stops venv loops."""
-        logger.info("Shutting down Nerd-Dock Indicator...")
-        # 1. Stop background monitor thread safely
-        self.monitor.stop()
-
-        # 2. Terminate the active dictation daemon process so it is not orphaned
-        state = self.controller.get_state()
-        if state in (STATE_RECORDING, STATE_SUSPENDED, STATE_TRANSITIONING):
-            logger.info("Stopping active nerd-dictation daemon process on exit...")
-            self.controller.cancel_dictation()
-
-        self.controller.stop_input_daemon()
-
-        # 3. Shutdown notification system cleanly
+        """Ends any session so the microphone is released."""
+        self.stream.cancel()
         if HAS_NOTIFY:
-            try:
-                Notify.uninit()
-            except Exception as e:
-                logger.warning("Error during notification shutdown: %s", e)
+            Notify.uninit()

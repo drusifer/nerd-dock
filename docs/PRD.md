@@ -1,3 +1,5 @@
+> 2026-11-27: Nerd-Dock now only does streaming dictation; the `nerd-dictation` controller described below was removed. Current behaviour: `USER_GUIDE.md`.
+
 # Product Requirements Document (PRD) — Nerd-Dock
 
 **Author:** Cypher (Product Manager)  

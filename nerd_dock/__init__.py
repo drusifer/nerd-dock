@@ -1,3 +1,3 @@
-"""Nerd-Dock: A lightweight system-wide control tray applet for nerd-dictation."""
+"""Nerd-Dock: tray control for streaming dictation to a Kyutai STT server."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
