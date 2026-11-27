@@ -72,9 +72,25 @@ class TestIndicator(unittest.TestCase):
         self.stream.cancel.assert_called_once()
 
     def test_remote_toggle_registers_action(self) -> None:
+        from nerd_dock import ui_indicator
+
+        app = ui_indicator.Gio.Application.new.return_value
+        app.get_is_remote.return_value = False
         self.indicator.enable_remote_toggle()
-        self.indicator._gio_app.add_action.assert_called_once()
-        self.indicator._gio_app.register.assert_called_once()
+        app.add_action.assert_called_once()
+        app.register.assert_called_once()
+        # A NON_UNIQUE application owns no bus name, so the shortcut would not reach it.
+        ui_indicator.Gio.Application.new.assert_called_once_with(
+            ui_indicator.APP_ID, ui_indicator.Gio.ApplicationFlags.FLAGS_NONE
+        )
+
+    def test_second_instance_is_refused(self) -> None:
+        from nerd_dock import ui_indicator
+
+        app = ui_indicator.Gio.Application.new.return_value
+        app.get_is_remote.return_value = True
+        with self.assertRaises(RuntimeError):
+            self.indicator.enable_remote_toggle()
 
 
 if __name__ == "__main__":

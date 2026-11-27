@@ -134,11 +134,15 @@ class NerdDockIndicator:
         Bind a custom shortcut to:
         gapplication action io.github.drusifer.NerdDock toggle
         """
-        self._gio_app = Gio.Application.new(APP_ID, Gio.ApplicationFlags.NON_UNIQUE)
+        # Not NON_UNIQUE: only a unique application owns APP_ID on the bus, and
+        # without the name `gapplication action` cannot reach it.
+        self._gio_app = Gio.Application.new(APP_ID, Gio.ApplicationFlags.FLAGS_NONE)
         action = Gio.SimpleAction.new("toggle", None)
         action.connect("activate", lambda _a, _p: self.toggle_dictation())
         self._gio_app.add_action(action)
         self._gio_app.register(None)
+        if self._gio_app.get_is_remote():
+            raise RuntimeError("Nerd-Dock is already running.")
         logger.info("Toggle action available on D-Bus as %s", APP_ID)
 
     def toggle_dictation(self) -> None:
