@@ -13,7 +13,8 @@ import shutil
 import subprocess  # nosec B404
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from urllib.parse import quote
 
 logger = logging.getLogger("nerd_dock.stt")
@@ -224,14 +225,46 @@ class StreamingSTT:
             proc.wait()
 
     def _send(self, message: dict) -> None:
+        self._send_data(json.dumps(message))
+
+    def _send_data(self, data: str | bytes) -> None:
         ws = self._ws
         if ws is None:
             return
         try:
             with self._send_lock:
-                ws.send(json.dumps(message))
+                ws.send(data)
         except Exception as e:
             logger.debug("STT send failed: %s", e)
+
+    @contextmanager
+    def _connected(self, headers: dict[str, str]) -> Iterator[threading.Thread]:
+        """Opens the WebSocket and starts the receiver thread, which is yielded.
+
+        A rejected API key becomes PermissionError, so it is not retried.
+        """
+        from websockets.exceptions import InvalidStatus
+        from websockets.sync.client import connect
+
+        try:
+            ws = connect(
+                self.url, additional_headers=headers, open_timeout=10, max_size=None
+            )
+        except InvalidStatus as e:
+            code = e.response.status_code
+            if code in (401, 403):
+                raise PermissionError(
+                    f"STT server rejected the API key (HTTP {code})."
+                ) from e
+            raise
+        with ws:
+            self._ws = ws
+            receiver = threading.Thread(target=self._receive, args=(ws,), daemon=True)
+            receiver.start()
+            try:
+                yield receiver
+            finally:
+                self._ws = None
 
     def _run(self) -> None:
         """Connect/stream loop; reconnects with backoff until stopped."""
@@ -253,34 +286,14 @@ class StreamingSTT:
         self.state = STATE_STOPPED
 
     def _session(self) -> None:
-        from websockets.exceptions import InvalidStatus
-        from websockets.sync.client import connect
-
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-        try:
-            ws = connect(
-                self.url, additional_headers=headers, open_timeout=10, max_size=None
-            )
-        except InvalidStatus as e:
-            code = e.response.status_code
-            if code in (401, 403):
-                raise PermissionError(
-                    f"STT server rejected the API key (HTTP {code})."
-                ) from e
-            raise
-        with ws:
-            self._ws = ws
-            self._drained.clear()
+        self._drained.clear()
+        with self._connected(headers) as receiver:
             self._send(session_update(self._model, self._silence_ms))
-            receiver = threading.Thread(target=self._receive, args=(ws,), daemon=True)
-            receiver.start()
-            try:
-                self._stream_audio(receiver)
-                if self._finish:
-                    self._send({"type": "input_audio_buffer.commit"})
-                    self._drained.wait(DRAIN_TIMEOUT)
-            finally:
-                self._ws = None
+            self._stream_audio(receiver)
+            if self._finish:
+                self._send({"type": "input_audio_buffer.commit"})
+                self._drained.wait(DRAIN_TIMEOUT)
 
     def _stream_audio(self, receiver: threading.Thread) -> None:
         while not self._stop.is_set() and receiver.is_alive():

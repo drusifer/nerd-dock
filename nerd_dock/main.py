@@ -21,6 +21,7 @@ except (ImportError, ValueError) as e:
     GRAPHICS_ERROR = e
 
 from nerd_dock.controller import NerdDockController
+from nerd_dock.kyutai_stream import KyutaiSTT
 from nerd_dock.monitor import NerdDictationMonitor
 from nerd_dock.stt_stream import (
     DEFAULT_KEY_FILE,
@@ -70,6 +71,14 @@ def parse_arguments() -> argparse.Namespace:
         default=os.environ.get("NERD_DOCK_STT_URL"),
         help="Stream to an OpenAI-Realtime STT server (e.g. http://host:8000) "
         "instead of nerd-dictation. Env: NERD_DOCK_STT_URL",
+    )
+    parser.add_argument(
+        "--stt-backend",
+        choices=("realtime", "kyutai"),
+        default=os.environ.get("NERD_DOCK_STT_BACKEND", "realtime"),
+        help="realtime = OpenAI-Realtime/Speaches (text after a pause); "
+        "kyutai = Kyutai moshi-server (words while you talk, e.g. "
+        "http://host:8001). Env: NERD_DOCK_STT_BACKEND (default: %(default)s)",
     )
     parser.add_argument(
         "--stt-model",
@@ -131,7 +140,14 @@ def main() -> int:
     try:
         # 2. Instantiate core components
         stream = None
-        if args.stt_url:
+        if args.stt_url and args.stt_backend == "kyutai":
+            stream = KyutaiSTT(
+                url=args.stt_url,
+                api_key=load_api_key(args.stt_key_file),
+                type_text=make_typer(args.input_tool),
+            )
+            logger.info("Streaming dictation via %s", stream.url)
+        elif args.stt_url:
             stream = StreamingSTT(
                 url=args.stt_url,
                 api_key=load_api_key(args.stt_key_file),
