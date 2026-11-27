@@ -192,7 +192,7 @@ make test
 
 ## 🎹 7. Keyboard Shortcut (Toggle)
 
-On Wayland, apps cannot see global key releases, so hold-to-talk is not available; a toggle shortcut is. While the app runs it exposes a `toggle` action on the session bus (stopped → start, recording/paused → stop). The tray icon turns **amber** with a "Loading model" notification while starting, and red with a "Listening" notification once the mic is live.
+On Wayland, apps cannot see global key releases, so hold-to-talk is not available; a toggle shortcut is. While the app runs it exposes a `toggle` action on the session bus (stopped → start, recording → pause, paused → resume). Pausing keeps the connection to a streaming server open; stop from the tray menu. The tray icon turns **amber** with a "Loading model" notification while starting, and red with a "Listening" notification once the mic is live.
 
 In GNOME: *Settings → Keyboard → Custom Shortcuts → Add*, command:
 
@@ -200,4 +200,4 @@ In GNOME: *Settings → Keyboard → Custom Shortcuts → Add*, command:
 gapplication action io.github.drusifer.NerdDock toggle
 ```
 
-Then assign your shortcut (e.g. Ctrl+Super+Space).
+Then assign your shortcut (e.g. Super+Z).

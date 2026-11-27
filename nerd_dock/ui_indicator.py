@@ -247,12 +247,17 @@ class NerdDockIndicator:
         logger.info("Toggle action available on D-Bus as %s", APP_ID)
 
     def toggle_dictation(self) -> None:
-        """Starts dictation when stopped, stops it when recording or paused."""
+        """Starts when stopped, then flips between recording and paused.
+
+        Pausing keeps a streaming connection open; stop is in the menu.
+        """
         state = self.controller.get_state()
         if state == STATE_STOPPED:
             self._on_start_clicked(None)
-        elif state in (STATE_RECORDING, STATE_SUSPENDED):
-            self._on_stop_clicked(None)
+        elif state == STATE_RECORDING:
+            self._on_pause_clicked(None)
+        elif state == STATE_SUSPENDED:
+            self._on_resume_clicked(None)
         else:
             logger.info("Ignoring toggle while %s", state)
 

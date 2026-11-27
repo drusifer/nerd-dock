@@ -129,18 +129,17 @@ class TestNerdDockIndicator(unittest.TestCase):
     def test_toggle_dictation_routes_by_state(self) -> None:
         with (
             patch.object(self.indicator, "_on_start_clicked") as start,
+            patch.object(self.indicator, "_on_pause_clicked") as pause,
+            patch.object(self.indicator, "_on_resume_clicked") as resume,
             patch.object(self.indicator, "_on_stop_clicked") as stop,
         ):
-            self.controller.set_state("STOPPED")
-            self.indicator.toggle_dictation()
+            for state in ("STOPPED", "RECORDING", "SUSPENDED", STATE_TRANSITIONING):
+                self.controller.set_state(state)
+                self.indicator.toggle_dictation()
             start.assert_called_once()
-            self.controller.set_state("RECORDING")
-            self.indicator.toggle_dictation()
-            stop.assert_called_once()
-            self.controller.set_state(STATE_TRANSITIONING)
-            self.indicator.toggle_dictation()
-            start.assert_called_once()
-            stop.assert_called_once()
+            pause.assert_called_once()
+            resume.assert_called_once()
+            stop.assert_not_called()
 
     def test_enable_remote_toggle_registers_action(self) -> None:
         self.indicator.enable_remote_toggle()
